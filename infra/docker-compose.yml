@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medchain_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-medchain_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medchain_secret_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-medchain_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medchain_user} -d ${POSTGRES_DB:-medchain_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7.0
+    container_name: medchain_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5.18-community
+    container_name: medchain_neo4j
+    restart: always
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-medchain_graph_pass}
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD:-medchain_graph_pass} 'RETURN 1;' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  hardhat:
+    build:
+      context: ../contracts
+      dockerfile: Dockerfile
+    container_name: medchain_hardhat
+    restart: always
+    ports:
+      - "8545:8545"
+
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    container_name: medchain_api
+    restart: always
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+    container_name: medchain_web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  mongo_data:
+  neo4j_data:
