@@ -5,7 +5,12 @@
 [![Frontend Build](https://img.shields.io/badge/Next.js%2014-Compiled%20%E2%9C%93-success)](apps/web)
 [![DBMS Showcase](https://img.shields.io/badge/SQL%20Showcase-3NF%20%2B%20CTE%20%2B%20Window%20Functions-orange)](docs/DBMS_SHOWCASE.md)
 
-**MedChain** is a production-grade, privacy-preserving healthcare data intelligence platform. It demonstrates a **hybrid multi-store architecture** integrating authoritative relational persistence, semi-structured clinical document storage, derived graph analytics, unsupervised machine learning cohort discovery, and an immutable Ethereum/Hardhat cryptographic commitment layer.
+**MedChain** is an educational privacy-preserving healthcare data intelligence demonstration. It explores a **hybrid multi-store architecture** integrating relational records, semi-structured clinical documents, derived graph analytics, unsupervised cohort discovery, and an Ethereum/Hardhat cryptographic commitment layer.
+
+> MedChain is an educational demonstration using synthetic data. It is not a clinical system and is not certified for regulated health data.
+
+See the [change checklist](docs/CHANGE_CHECKLIST.md) for completed changes and remaining essential work.
+See the [review backlog](docs/REVIEW_BACKLOG.md) for confirmed security/reliability gaps and optional improvements.
 
 ---
 
@@ -35,10 +40,10 @@ MedChain addresses the tension between clinical data usability, institutional pr
 | 30 Tables)    |             |  & Discharge Sums)|           | Zero Raw PII/PHI  |
 +-------+-------+             +---------+---------+           +---------+---------+
         |                               |                               |
-        | Outbox Pattern                | SHA-256 Digest                | Nonce/Block
+                          | Admin-triggered rebuild       | SHA-256 Digest                | Nonce/Block
         v                               v                               v
 +---------------+             +-------------------+           +-------------------+
-|     Neo4j     |             |  RFC 8785 Canonical|          |   Scikit-Learn    |
+|     Neo4j     |             | Sorted-key JSON   |          |   Scikit-Learn    |
 | Derived Graph |             | Integrity Service |           | K-Means Cohorting |
 | Projection    |             | Tamper Detection  |           | Feature Vectors   |
 +---------------+             +-------------------+           +-------------------+
@@ -46,18 +51,19 @@ MedChain addresses the tension between clinical data usability, institutional pr
 
 ### Source-of-Truth Hierarchy
 1. **Relational Store (PostgreSQL / SQLite fallback):** Authoritative source of truth for identity, patient demographics, clinical visits, diagnoses, prescriptions, insurance claims, and active consent states.
-2. **Document Store (MongoDB / Local JSON fallback):** Rich semi-structured clinical encounter narratives, lab notes, and discharge summaries.
-3. **Derived Graph (Neo4j / In-Memory projection):** Synchronized asynchronously via transactional outbox for multi-hop disease co-occurrence and drug-disease interaction queries.
-4. **Blockchain Audit Ledger (Solidity / Hardhat):** Append-only cryptographic commitments (salted SHA-256 digests) for access audits and patient consent lifecycle tracking. **Strict zero-PII/raw-data on-chain policy.**
+2. **Document Store (MongoDB / Local JSON fallback):** Semi-structured clinical narratives are encrypted with AES-256-GCM. The local JSON fallback is limited to development and test; production requires MongoDB. The API decrypts payloads only after access checks.
+3. **Derived Graph (Neo4j / In-Memory projection):** Rebuilt from relational data through the admin graph-rebuild action. The in-memory projection is a development fallback; automated outbox synchronization is not yet implemented.
+4. **Blockchain Audit Ledger (Solidity / Hardhat):** Records consent and access events plus salted document commitments. Raw clinical records and direct identifiers stay off-chain; opaque hashes are used for references.
 
 ---
 
 ## Key Features
 
 - **Centralized Deny-by-Default Consent Engine:** Gated research access control enforcing patient consent scopes (`aggregate_diagnoses`, `medication_history`, `lab_summaries`). Immediate real-time revocation enforcement with zero server restart or cache invalidation delays.
-- **Cryptographic Record Integrity:** Deterministic RFC 8785 canonical JSON sorting and salted SHA-256 hashing. Live demonstration of document verification and unauthorized tampering detection.
-- **Advanced DBMS Engineering (3NF Schema):** 30 normalized relational tables adhering strictly to First, Second, and Third Normal Forms. Fully documented SQL showcases featuring multi-table joins, recursive Common Table Expressions (CTEs), window functions (`DENSE_RANK`), and `EXPLAIN QUERY PLAN` optimization.
+- **Cryptographic Record Integrity:** Deterministic sorted-key compact JSON and salted SHA-256 hashing, checked against the on-chain commitment when the chain is available.
+- **Advanced DBMS Engineering:** Relational schema documentation, a command-line SQL showcase, and an admin-only web explorer for fixed joins, CTEs, window aggregates, and an indexed lookup plan. Aggregate results hide groups with fewer than five patients.
 - **Explainable Insurance Fraud Heuristics:** Automated anomaly flagging for overlapping visits, 48-hour duplicate billing, and unbundling, paired with human-in-the-loop analyst adjudication.
+- **Provider-Scoped Insurance Access:** Insurance analysts are assigned to a provider and can view, create, adjudicate, and analyze only that provider's policies and claims.
 - **Unsupervised Patient Cohort Clustering:** Scikit-learn K-Means pipeline generating multidimensional patient risk phenotypes from diagnoses, encounter frequencies, and billing data.
 - **Resilient Local Operation:** Built-in self-healing fallbacks allowing full local execution of backend, smart contracts, scripts, and frontend even when external Docker services are offline.
 
@@ -69,7 +75,7 @@ MedChain addresses the tension between clinical data usability, institutional pr
 MEDCHAIN/
 ├── apps/
 │   └── web/                   # Next.js 14 App Router Web Application
-│       ├── src/app/           # 10 Functional pages (Patients, Documents, Consent, Cohorts, etc.)
+│       ├── src/app/           # App Router modules for patient, research, insurance, admin, and audit workflows
 │       ├── src/components/    # Glassmorphic UI components, Navbar, Role switcher
 │       └── src/lib/api.ts     # Typed API client connecting to backend
 ├── contracts/
@@ -107,9 +113,35 @@ MEDCHAIN/
 ## Quickstart Guide
 
 ### Prerequisites
-- **Python 3.11+**
-- **Node.js 18+ & npm**
-- *(Optional)* Docker Engine (if running containerized databases)
+- **Docker Engine with Compose** for the all-in-one setup below
+
+### All-in-one Docker setup (recommended)
+
+From the repository root:
+
+```bash
+cp .env.example .env
+docker compose -f infra/docker-compose.yml up --build -d
+docker compose -f infra/docker-compose.yml exec api python /app/scripts/seed_demo.py
+```
+
+Compose starts PostgreSQL, authenticated MongoDB, Neo4j, the API, and a local Hardhat chain. The chain deploys the audit contract before the API starts. The seed command creates synthetic demo records and accounts. Open `http://localhost:3000` and use **Sign in** with `patient@medchain.local` or another demo account; all seeded demo accounts use `Password123!`.
+
+`DOCUMENT_ENCRYPTION_KEY` is a 64-character hexadecimal AES-256 key. The example key is for local synthetic data only. Set a unique key and store it outside the database for any deployment; losing or changing it makes encrypted clinical documents unreadable. Legacy plaintext documents are encrypted when first read.
+
+Research query, graph, and cohort outputs require at least five consented patients. Result cells and cluster summaries supported by fewer than five patients are suppressed to reduce small-group disclosure risk. This is a basic disclosure control, not a guarantee of anonymity.
+
+To stop the stack, run:
+
+```bash
+docker compose -f infra/docker-compose.yml down
+```
+
+Add `-v` only when you intend to delete the database volumes and all seeded data.
+
+### Manual local setup
+
+For the individual service instructions below, install **Python 3.11+**, **Node.js 18+**, and npm. Start the required databases separately or use the Compose stack above.
 
 ---
 
@@ -197,7 +229,7 @@ All seeded demo accounts share the password: **`Password123!`**
 | **Research Scientist**| `researcher@medchain.local`| `researcher`| Consent-gated queries, K-Means cohorting |
 | **Insurance Analyst**| `analyst@medchain.local` | `insurance_analyst`| Transactional claim rollback, fraud queue |
 
-*You can switch roles instantly in the UI using the header role switcher without logging out.*
+In local demo mode, the header role switcher can change demo personas. Regular accounts sign in with their own credentials and do not get the demo role switcher.
 
 ---
 

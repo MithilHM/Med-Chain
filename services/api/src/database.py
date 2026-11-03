@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from fastapi import HTTPException, status
 from src.config import settings
 
 logger = logging.getLogger("medchain.database")
@@ -55,21 +56,31 @@ async def check_connection() -> bool:
         async with async_engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
             return True
-    except Exception as e:
-        logger.warning(f"Primary PostgreSQL connection failed ({e}). Activating SQLite fallback.")
-        setup_engine(force_fallback=True)
-        return True
+    except Exception:
+        environment = settings.ENVIRONMENT.strip().lower()
+        fallback_allowed = settings.USE_SQLITE_FALLBACK or environment in {"development", "dev", "test", "testing"}
+        if not is_fallback_active and fallback_allowed:
+            logger.warning("Primary database connection failed. Activating SQLite fallback.")
+            setup_engine(force_fallback=True)
+            return True
+        if is_fallback_active:
+            logger.error("SQLite fallback database is unavailable.")
+        else:
+            logger.error("Primary database is unavailable and SQLite fallback is disabled.")
+        return False
 
 async def init_db():
     import src.models
-    await check_connection()
+    if not await check_connection():
+        raise RuntimeError("Cannot initialize schema while the configured database is unavailable.")
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database schema initialized successfully.")
 
 async def reset_db():
     import src.models
-    await check_connection()
+    if not await check_connection():
+        raise RuntimeError("Cannot reset schema while the configured database is unavailable.")
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -78,7 +89,11 @@ async def reset_db():
 @asynccontextmanager
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     global AsyncSessionLocal
-    await check_connection()
+    if not await check_connection():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The configured database is unavailable.",
+        )
     async with AsyncSessionLocal() as session:
         try:
             yield session

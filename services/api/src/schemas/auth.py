@@ -22,6 +22,7 @@ class UserOut(BaseModel):
     is_active: bool
     patient_id: Optional[str] = None
     doctor_id: Optional[str] = None
+    demo_mode: bool = False
 
     class Config:
         from_attributes = True

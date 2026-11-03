@@ -16,6 +16,8 @@ import {
 
 export default function CohortsPage() {
   const [cohorts, setCohorts] = useState<any[]>([]);
+  const [researchProjects, setResearchProjects] = useState<any[]>([]);
+  const [projectId, setProjectId] = useState("");
   const [cohortName, setCohortName] = useState("Metabolic & Hypertension Cohort");
   const [k, setK] = useState(3);
   const [seed, setSeed] = useState(42);
@@ -29,25 +31,42 @@ export default function CohortsPage() {
 
   const loadCohorts = async () => {
     try {
-      const list = await ApiClient.getCohorts();
+      const list = await ApiClient.getCohorts(projectId || undefined);
       setCohorts(list);
-      if (list.length > 0 && !currentCohort) {
-        setCurrentCohort(list[0]);
-      }
+      setCurrentCohort(list[0] || null);
     } catch (err: any) {
       console.error(err);
     }
   };
 
   useEffect(() => {
-    loadCohorts();
+    let active = true;
+    ApiClient.getResearchProjects()
+      .then((projects) => {
+        if (!active) return;
+        setResearchProjects(projects);
+        if (projects.length > 0) setProjectId(projects[0].id);
+      })
+      .catch((err: any) => console.error(err));
+    return () => {
+      active = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (projectId) loadCohorts();
+  }, [projectId]);
 
   const handleRunClustering = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!projectId) {
+      alert("Select a research project with active patient consent before clustering.");
+      return;
+    }
     setRunning(true);
     try {
       const res = await ApiClient.runCohortClustering({
+        project_id: projectId,
         name: cohortName,
         k: Number(k),
         features: selectedFeatures,
@@ -87,6 +106,24 @@ export default function CohortsPage() {
           </div>
 
           <form onSubmit={handleRunClustering} className="space-y-4 text-xs">
+            <div>
+              <label className="block text-slate-300 font-medium mb-1">Research Project (consent scope)</label>
+              <select
+                required
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="" disabled>Select a project</option>
+                {researchProjects.map((project) => (
+                  <option key={project.id} value={project.id}>{project.title}</option>
+                ))}
+              </select>
+              {researchProjects.length === 0 && (
+                <p className="mt-1 text-amber-300">Create a research project and obtain active cohort consent first.</p>
+              )}
+            </div>
+
             <div>
               <label className="block text-slate-300 font-medium mb-1">Cohort Run Name</label>
               <input
@@ -143,16 +180,18 @@ export default function CohortsPage() {
                     <input
                       type="checkbox"
                       checked={selectedFeatures.includes(f.id)}
+                      disabled={selectedFeatures.includes(f.id) && selectedFeatures.length === 1}
                       onChange={(e) => {
                         if (e.target.checked) setSelectedFeatures([...selectedFeatures, f.id]);
                         else setSelectedFeatures(selectedFeatures.filter((item) => item !== f.id));
                       }}
-                      className="rounded border-slate-700 text-cyan-500 focus:ring-0"
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 disabled:opacity-50"
                     />
                     <span>{f.label}</span>
                   </label>
                 ))}
               </div>
+              <p className="mt-1 text-[10px] text-slate-500">Only selected groups form the clustering feature matrix.</p>
             </div>
 
             <button
@@ -214,6 +253,11 @@ export default function CohortsPage() {
                       <span>{currentCohort.clusters?.length || 0} Distinct Cohorts</span>
                     </div>
                   </div>
+                  {currentCohort.features?.length > 0 && (
+                    <div className="text-[11px] text-slate-500 mt-2">
+                      Input groups: {currentCohort.features.map((feature: string) => feature.replaceAll("_", " ")).join(", ")}
+                    </div>
+                  )}
 
                   <span className="px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                     Deterministic Reproducibility
@@ -246,8 +290,8 @@ export default function CohortsPage() {
 
                       <div className="space-y-2 text-xs">
                         <div className="flex items-center justify-between text-slate-300">
-                          <span className="text-slate-400">Average Age:</span>
-                          <span className="font-semibold">{cluster.avg_age} years</span>
+                          <span className="text-slate-400">Age Band Estimate:</span>
+                          <span className="font-semibold">{cluster.avg_age == null ? "Not selected" : `${cluster.avg_age} years`}</span>
                         </div>
 
                         <div>
@@ -255,14 +299,16 @@ export default function CohortsPage() {
                             Dominant Diagnoses
                           </div>
                           <div className="flex flex-wrap gap-1">
-                            {cluster.top_diagnoses?.map((d: string, dIdx: number) => (
-                              <span
-                                key={dIdx}
-                                className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-200"
-                              >
-                                {d}
-                              </span>
-                            ))}
+                            {currentCohort.features?.includes("diagnoses") ? (
+                              cluster.top_diagnoses?.length ? cluster.top_diagnoses.map((d: string, dIdx: number) => (
+                                <span
+                                  key={dIdx}
+                                  className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-200"
+                                >
+                                  {d}
+                                </span>
+                              )) : <span className="text-slate-500">No diagnosis patterns observed</span>
+                            ) : <span className="text-slate-500">Not selected for this run</span>}
                           </div>
                         </div>
 
@@ -271,14 +317,16 @@ export default function CohortsPage() {
                             Associated Prescriptions
                           </div>
                           <div className="flex flex-wrap gap-1">
-                            {cluster.top_medications?.map((m: string, mIdx: number) => (
-                              <span
-                                key={mIdx}
-                                className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-200"
-                              >
-                                {m}
-                              </span>
-                            ))}
+                            {currentCohort.features?.includes("medications") ? (
+                              cluster.top_medications?.length ? cluster.top_medications.map((m: string, mIdx: number) => (
+                                <span
+                                  key={mIdx}
+                                  className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-200"
+                                >
+                                  {m}
+                                </span>
+                              )) : <span className="text-slate-500">No medication patterns observed</span>
+                            ) : <span className="text-slate-500">Not selected for this run</span>}
                           </div>
                         </div>
                       </div>

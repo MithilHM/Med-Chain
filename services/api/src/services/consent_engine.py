@@ -12,13 +12,27 @@ logger = logging.getLogger("medchain.consent_engine")
 
 class ConsentPolicyEngine:
     @staticmethod
+    def _consent_is_current(consent: Consent, now: datetime) -> tuple[bool, str]:
+        valid_from = consent.valid_from
+        valid_until = consent.valid_until
+        if valid_from.tzinfo is None:
+            valid_from = valid_from.replace(tzinfo=timezone.utc)
+        if valid_until.tzinfo is None:
+            valid_until = valid_until.replace(tzinfo=timezone.utc)
+        if valid_from > now:
+            return False, "NOT_YET_VALID"
+        if valid_until <= now:
+            return False, "EXPIRED"
+        return True, "ACTIVE"
+
+    @staticmethod
     async def evaluate_research_access(
         db: AsyncSession,
         actor: AppUser,
         project_id: str,
         requested_scope: str, # aggregate_diagnoses, medication_history, lab_summaries, deidentified_cohort
         target_patient_id: Optional[str] = None
-    ) -> Tuple[bool, str, Optional[Consent]]:
+    ) -> Tuple[bool, str, List[Consent]]:
         """
         Deny-by-default evaluation:
         1. Actor must be active and have role 'researcher' or 'admin'.
@@ -31,77 +45,98 @@ class ConsentPolicyEngine:
         4. Logs access attempt (GRANTED or DENIED) to access_event table.
         """
         now = datetime.now(timezone.utc)
+        target_patient = None
+        if target_patient_id:
+            from sqlalchemy import or_
+            target_patient = (await db.execute(
+                select(Patient).where(
+                    or_(Patient.id == target_patient_id, Patient.display_code == target_patient_id)
+                )
+            )).scalar_one_or_none()
+        target_event_patient_id = target_patient.id if target_patient else None
 
         # 1. Actor check
         if not actor.is_active or actor.role not in ("researcher", "admin"):
             reason = "Actor inactive or does not possess research authorization role."
             await ConsentPolicyEngine._log_access(
-                db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
+                db, actor.id, target_event_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
             )
-            return False, reason, None
+            return False, reason, []
 
         # 2. Project check
         project = (await db.execute(select(ResearchProject).where(ResearchProject.id == project_id))).scalar_one_or_none()
-        if not project or project.status != "ACTIVE":
-            reason = f"Research project {project_id} not found or inactive."
+        if (
+            not project
+            or project.status != "ACTIVE"
+            or (actor.role == "researcher" and project.created_by != actor.id)
+        ):
+            reason = "Research project was not found, is inactive, or is not owned by this researcher."
             await ConsentPolicyEngine._log_access(
-                db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
+                db, actor.id, target_event_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
             )
-            return False, reason, None
+            return False, reason, []
 
         # 3. If patient-specific query or cohort evaluation
         if target_patient_id:
-            from sqlalchemy import or_
-            pt = (await db.execute(select(Patient).where(or_(Patient.id == target_patient_id, Patient.display_code == target_patient_id)))).scalar_one_or_none()
-            effective_patient_id = pt.id if pt else target_patient_id
-
-            consent = (await db.execute(
-                select(Consent).where(
-                    Consent.patient_id == effective_patient_id,
-                    Consent.requester_project_id == project_id,
-                    Consent.status == "GRANTED"
+            pt = target_patient
+            if not pt:
+                reason = "Target patient was not found."
+                await ConsentPolicyEngine._log_access(
+                    db, actor.id, None, "RESEARCH_QUERY", project_id, "DENIED", reason
                 )
-            )).scalar_one_or_none()
+                return False, reason, []
 
-            if not consent:
+            patient_consents = (await db.execute(
+                select(Consent).where(
+                    Consent.patient_id == pt.id,
+                    Consent.requester_project_id == project_id,
+                    Consent.status == "GRANTED",
+                    Consent.revoked_at.is_(None),
+                )
+            )).scalars().all()
+
+            if not patient_consents:
                 reason = "No active consent granted by patient for this research project."
                 await ConsentPolicyEngine._log_access(
-                    db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
+                    db, actor.id, pt.id, "RESEARCH_QUERY", project_id, "DENIED", reason
                 )
-                return False, reason, None
+                return False, reason, []
 
-            if consent.revoked_at is not None:
-                reason = "Patient has explicitly revoked data sharing consent."
-                await ConsentPolicyEngine._log_access(
-                    db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
-                )
-                return False, reason, None
+            consent = None
+            saw_unexpired = False
+            saw_future = False
+            for candidate in patient_consents:
+                is_current, window_status = ConsentPolicyEngine._consent_is_current(candidate, now)
+                if window_status == "NOT_YET_VALID":
+                    saw_future = True
+                    continue
+                if not is_current:
+                    continue
+                saw_unexpired = True
+                scopes = candidate.scope_json if isinstance(candidate.scope_json, list) else candidate.scope_json.get("scopes", [])
+                if requested_scope in scopes or "*" in scopes:
+                    consent = candidate
+                    break
 
-            # Handle datetime comparison
-            valid_until = consent.valid_until
-            if valid_until.tzinfo is None:
-                valid_until = valid_until.replace(tzinfo=timezone.utc)
-            if valid_until <= now:
-                reason = "Patient data sharing consent has expired."
+            if not consent:
+                if not saw_unexpired:
+                    reason = (
+                        "Patient data sharing consent has not started yet."
+                        if saw_future
+                        else "Patient data sharing consent has expired."
+                    )
+                else:
+                    reason = f"Requested scope '{requested_scope}' is not included in the patient's active consent scopes."
                 await ConsentPolicyEngine._log_access(
-                    db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
+                    db, actor.id, pt.id, "RESEARCH_QUERY", project_id, "DENIED", reason
                 )
-                return False, reason, None
-
-            # Check scope
-            scopes = consent.scope_json if isinstance(consent.scope_json, list) else consent.scope_json.get("scopes", [])
-            if requested_scope not in scopes and "*" not in scopes:
-                reason = f"Requested scope '{requested_scope}' not included in patient's granted consent scopes ({scopes})."
-                await ConsentPolicyEngine._log_access(
-                    db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "DENIED", reason
-                )
-                return False, reason, None
+                return False, reason, []
 
             # Access granted
             await ConsentPolicyEngine._log_access(
-                db, actor.id, target_patient_id, "RESEARCH_QUERY", project_id, "GRANTED", "CONSENT_ACTIVE_AND_VERIFIED"
+                db, actor.id, pt.id, "RESEARCH_QUERY", project_id, "GRANTED", "CONSENT_ACTIVE_AND_VERIFIED"
             )
-            return True, "Consent verified successfully.", consent
+            return True, "Consent verified successfully.", [consent]
 
         # 4. Project-level aggregate query across all consented patients
         active_consents = (await db.execute(
@@ -114,8 +149,8 @@ class ConsentPolicyEngine:
 
         valid_consents = []
         for c in active_consents:
-            v_until = c.valid_until if c.valid_until.tzinfo else c.valid_until.replace(tzinfo=timezone.utc)
-            if v_until > now:
+            is_current, _ = ConsentPolicyEngine._consent_is_current(c, now)
+            if is_current:
                 scopes = c.scope_json if isinstance(c.scope_json, list) else c.scope_json.get("scopes", [])
                 if requested_scope in scopes or "*" in scopes:
                     valid_consents.append(c)
@@ -125,12 +160,13 @@ class ConsentPolicyEngine:
             await ConsentPolicyEngine._log_access(
                 db, actor.id, None, "RESEARCH_AGGREGATE_QUERY", project_id, "DENIED", reason
             )
-            return False, reason, None
+            return False, reason, []
 
+        authorized_patient_count = len({consent.patient_id for consent in valid_consents})
         await ConsentPolicyEngine._log_access(
-            db, actor.id, None, "RESEARCH_AGGREGATE_QUERY", project_id, "GRANTED", f"{len(valid_consents)}_CONSENTS_ACTIVE"
+            db, actor.id, None, "RESEARCH_AGGREGATE_QUERY", project_id, "GRANTED", f"{authorized_patient_count}_PATIENTS_ACTIVE"
         )
-        return True, f"Authorized across {len(valid_consents)} consenting patients.", None
+        return True, f"Authorized across {authorized_patient_count} consenting patients.", valid_consents
 
     @staticmethod
     async def _log_access(

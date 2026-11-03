@@ -19,7 +19,6 @@ export default function ResearchPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [queryType, setQueryType] = useState<string>("disease_distribution");
-  const [targetPatientCode, setTargetPatientCode] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [queryResult, setQueryResult] = useState<any>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
@@ -32,10 +31,10 @@ export default function ResearchPage() {
 
   // Access Request Modal State
   const [showReqModal, setShowReqModal] = useState(false);
-  const [patients, setPatients] = useState<any[]>([]);
-  const [reqPatientId, setReqPatientId] = useState("");
+  const [reqPatientCode, setReqPatientCode] = useState("");
   const [reqPurpose, setReqPurpose] = useState("Longitudinal metabolic study");
   const [reqScopes, setReqScopes] = useState<string[]>(["aggregate_diagnoses", "medication_history"]);
+  const [diseaseCode, setDiseaseCode] = useState("");
   const [submittingReq, setSubmittingReq] = useState(false);
 
   const loadProjects = async () => {
@@ -45,9 +44,6 @@ export default function ResearchPage() {
       if (projs.length > 0 && !selectedProjectId) {
         setSelectedProjectId(projs[0].id);
       }
-      const pts = await ApiClient.getPatients().catch(() => []);
-      setPatients(pts);
-      if (pts.length > 0) setReqPatientId(pts[0].id);
     } catch (err: any) {
       console.error(err);
     }
@@ -76,11 +72,11 @@ export default function ResearchPage() {
 
   const handleCreateAccessRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reqPatientId || !selectedProjectId) return;
+    if (!reqPatientCode.trim() || !selectedProjectId) return;
     setSubmittingReq(true);
     try {
       await ApiClient.createAccessRequest({
-        patient_id: reqPatientId,
+        patient_id: reqPatientCode.trim(),
         project_id: selectedProjectId,
         purpose: reqPurpose,
         requested_scopes: reqScopes,
@@ -100,19 +96,13 @@ export default function ResearchPage() {
     setQueryResult(null);
     setQueryError(null);
 
-    let targetPtId = undefined;
-    if (targetPatientCode.trim()) {
-      const match = patients.find(
-        (p) => p.display_code.toLowerCase() === targetPatientCode.trim().toLowerCase()
-      );
-      if (match) targetPtId = match.id;
-    }
-
     try {
       const res = await ApiClient.executeResearchQuery({
         project_id: selectedProjectId,
         query_type: queryType,
-        filters: targetPtId ? { patient_id: targetPtId } : undefined,
+        disease_code: queryType === "disease_distribution" && diseaseCode.trim()
+          ? diseaseCode.trim().toUpperCase()
+          : undefined,
       });
       setQueryResult(res);
     } catch (err: any) {
@@ -164,7 +154,7 @@ export default function ResearchPage() {
           <span className="text-[11px] font-mono text-slate-400">Policy: Deny by Default</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">Governing Research Project</label>
             <select
@@ -189,22 +179,26 @@ export default function ResearchPage() {
             >
               <option value="disease_distribution">Disease Distribution Across Consented Cohort</option>
               <option value="medication_utilization">Medication Utilization Frequencies</option>
+              <option value="lab_summary">Laboratory Result Summary</option>
               <option value="cohort_summary">Overall Cohort Encounters Summary</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Target Patient Code (Optional Test)
+              Disease Code Filter
             </label>
             <input
               type="text"
-              placeholder="e.g. PT-100201 (Leave blank for cohort)"
-              value={targetPatientCode}
-              onChange={(e) => setTargetPatientCode(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+              placeholder="Optional, e.g. E11"
+              value={diseaseCode}
+              disabled={queryType !== "disease_distribution"}
+              onChange={(e) => setDiseaseCode(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono disabled:opacity-50"
             />
+            <p className="mt-1 text-[10px] text-slate-500">Only applies to disease distribution queries.</p>
           </div>
+
         </div>
 
         {selectedProjObj && (
@@ -215,7 +209,7 @@ export default function ResearchPage() {
 
         <div className="flex items-center justify-between pt-2">
           <div className="text-[11px] text-slate-400">
-            Evaluating actor role, active consent existence, unexpired validity, and scope matching.
+            Requires active scope-matched consent from at least five patients. Smaller result groups are suppressed.
           </div>
           <button
             onClick={handleRunQuery}
@@ -262,23 +256,53 @@ export default function ResearchPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px]">
-                    <th className="py-2.5 px-3">Catalog Code</th>
-                    <th className="py-2.5 px-3">Description / Name</th>
-                    {queryResult.results[0]?.drug_class && <th className="py-2.5 px-3">Drug Class</th>}
-                    <th className="py-2.5 px-3 text-right">Aggregate Occurrences</th>
-                    <th className="py-2.5 px-3 text-right">Consented Patients</th>
+                    {queryResult.query_type === "lab_summary" ? (
+                      <>
+                        <th className="py-2.5 px-3">Test Code</th>
+                        <th className="py-2.5 px-3">Laboratory Test</th>
+                        <th className="py-2.5 px-3">Unit</th>
+                        <th className="py-2.5 px-3 text-right">Results</th>
+                        <th className="py-2.5 px-3 text-right">Patients</th>
+                        <th className="py-2.5 px-3 text-right">Abnormal</th>
+                        <th className="py-2.5 px-3 text-right">Average</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="py-2.5 px-3">Catalog Code</th>
+                        <th className="py-2.5 px-3">Description / Name</th>
+                        {queryResult.query_type === "medication_utilization" && <th className="py-2.5 px-3">Drug Class</th>}
+                        <th className="py-2.5 px-3 text-right">Aggregate Occurrences</th>
+                        <th className="py-2.5 px-3 text-right">Consented Patients</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                  {queryResult.results.map((row: any, idx: number) => (
+                  {queryResult.results.length === 0 ? (
+                    <tr><td colSpan={queryResult.query_type === "lab_summary" ? 7 : queryResult.query_type === "medication_utilization" ? 5 : 4} className="py-6 text-center text-slate-500">No matching records met the minimum group size.</td></tr>
+                  ) : queryResult.results.map((row: any, idx: number) => (
                     <tr key={idx} className="hover:bg-slate-900/40">
-                      <td className="py-3 px-3 font-mono text-cyan-400">{row.code}</td>
-                      <td className="py-3 px-3 font-medium text-white">{row.name}</td>
-                      {row.drug_class && <td className="py-3 px-3 text-slate-400">{row.drug_class}</td>}
-                      <td className="py-3 px-3 text-right font-mono font-semibold">
-                        {row.diagnosis_count || row.prescription_count || 0}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-slate-400">{row.patient_count || 0}</td>
+                      {queryResult.query_type === "lab_summary" ? (
+                        <>
+                          <td className="py-3 px-3 font-mono text-cyan-400">{row.test_code}</td>
+                          <td className="py-3 px-3 font-medium text-white">{row.test_name}</td>
+                          <td className="py-3 px-3 text-slate-400">{row.unit}</td>
+                          <td className="py-3 px-3 text-right font-mono">{row.result_count}</td>
+                          <td className="py-3 px-3 text-right font-mono text-slate-400">{row.patient_count}</td>
+                          <td className="py-3 px-3 text-right font-mono text-amber-300">{row.abnormal_result_count ?? "Suppressed"}</td>
+                          <td className="py-3 px-3 text-right font-mono">{row.average_result == null ? "—" : Number(row.average_result).toFixed(2)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3 px-3 font-mono text-cyan-400">{row.code}</td>
+                          <td className="py-3 px-3 font-medium text-white">{row.name}</td>
+                          {queryResult.query_type === "medication_utilization" && <td className="py-3 px-3 text-slate-400">{row.drug_class || "—"}</td>}
+                          <td className="py-3 px-3 text-right font-mono font-semibold">
+                            {row.diagnosis_count || row.prescription_count || 0}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-slate-400">{row.patient_count || 0}</td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -293,11 +317,11 @@ export default function ResearchPage() {
                 <div className="text-xs text-slate-400 mt-1">Consented Patient Records</div>
               </div>
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-center">
-                <div className="text-2xl font-bold text-cyan-400">{queryResult.cohort_overview.total_diagnoses_observed}</div>
+                <div className="text-2xl font-bold text-cyan-400">{queryResult.cohort_overview.total_diagnoses_observed ?? "Suppressed"}</div>
                 <div className="text-xs text-slate-400 mt-1">Observed Diagnoses Count</div>
               </div>
               <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-center">
-                <div className="text-2xl font-bold text-emerald-400">{queryResult.cohort_overview.total_prescriptions_recorded}</div>
+                <div className="text-2xl font-bold text-emerald-400">{queryResult.cohort_overview.total_prescriptions_recorded ?? "Suppressed"}</div>
                 <div className="text-xs text-slate-400 mt-1">Active Prescriptions Recorded</div>
               </div>
             </div>
@@ -372,17 +396,14 @@ export default function ResearchPage() {
             <form onSubmit={handleCreateAccessRequest} className="space-y-4 text-xs">
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Target Patient</label>
-                <select
-                  value={reqPatientId}
-                  onChange={(e) => setReqPatientId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-500"
-                >
-                  {patients.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.display_code} ({p.sex}, DOB: {p.date_of_birth})
-                    </option>
-                  ))}
-                </select>
+                <input
+                  type="text"
+                  required
+                  placeholder="Enter a patient code, e.g. PT-100201"
+                  value={reqPatientCode}
+                  onChange={(e) => setReqPatientCode(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-500 font-mono"
+                />
               </div>
 
               <div>

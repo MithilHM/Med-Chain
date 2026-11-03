@@ -17,6 +17,7 @@ class AppUser(BaseModel):
 
     patient_profile = relationship("Patient", back_populates="user", uselist=False)
     doctor_profile = relationship("Doctor", back_populates="user", uselist=False)
+    insurance_analyst_profile = relationship("InsuranceAnalyst", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 class Hospital(BaseModel):
     __tablename__ = "hospital"

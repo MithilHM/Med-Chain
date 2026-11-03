@@ -16,7 +16,7 @@ MedChain operates under a zero-trust model between client layers and healthcare 
 Storing healthcare records, diagnostic codes, or patient identities on a public or semi-private blockchain introduces catastrophic privacy and regulatory vulnerabilities (GDPR right to erasure, HIPAA violations, re-identification attacks).
 
 ### The MedChain Cryptographic Commitment Protocol:
-1. **Deterministic Canonicalization:** The record object (or document JSON) is transformed into RFC 8785 canonical JSON with sorted keys and normalized whitespace.
+1. **Deterministic Serialization:** The record object is serialized as sorted-key compact JSON before salted SHA-256 hashing. This implementation does not claim RFC 8785 conformance.
 2. **Salt Generation:** A cryptographically secure 256-bit random salt ($S$) is generated per record version and stored strictly in PostgreSQL's private `record_integrity` table.
 3. **Commitment Computation:**
    $$\text{Commitment Hash} = \text{SHA-256}(\text{CanonicalJSON} \parallel \text{Salt})$$

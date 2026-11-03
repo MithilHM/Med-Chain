@@ -5,7 +5,7 @@ from src.models.clinical import (
     Treatment, LabTest, LabResult, SideEffect, ObservedAdverseEvent
 )
 from src.models.documents import MedicalDocument, RecordIntegrity
-from src.models.insurance import InsuranceProvider, InsurancePolicy, InsuranceClaim, ClaimItem
+from src.models.insurance import InsuranceProvider, InsuranceAnalyst, InsurancePolicy, InsuranceClaim, ClaimItem
 from src.models.consent import Consent, AccessRequest, AccessEvent, BlockchainEvent, OutboxEvent
 from src.models.analytics import Cohort, CohortMembership, AnalyticsRun
 
@@ -32,6 +32,7 @@ __all__ = [
     "MedicalDocument",
     "RecordIntegrity",
     "InsuranceProvider",
+    "InsuranceAnalyst",
     "InsurancePolicy",
     "InsuranceClaim",
     "ClaimItem",

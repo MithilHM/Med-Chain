@@ -5,6 +5,8 @@ MedChain is an end-to-end, locally runnable healthcare data platform showcasing 
 
 All synthetic data and models strictly demonstrate computer science and database principles; no clinical validity or regulatory compliance is implied.
 
+> **Status note:** This document records the original phase scope, not a live completion report. For work already implemented in the current repository and remaining essential tasks, use [CHANGE_CHECKLIST.md](CHANGE_CHECKLIST.md). Items below should not be read as claims that implementation is absent or that acceptance checks have passed.
+
 ---
 
 ## 2. Phase-by-Phase Execution Plan

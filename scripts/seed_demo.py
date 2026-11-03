@@ -1,12 +1,14 @@
 import sys
-import os
 import asyncio
+from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-# Add root and api service to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../services/api"))
+project_root = Path(__file__).resolve().parent.parent
+api_root = project_root / "services" / "api"
+sys.path.insert(0, str(api_root if api_root.is_dir() else project_root))
 
+from src.config import settings
 from src.database import init_db, get_db_session
 from src.services.auth import hash_password
 from src.services.mongo import MongoDocumentService
@@ -16,11 +18,17 @@ from src.models import (
     AppUser, Hospital, Doctor, Patient, ResearchOrganization, ResearchProject,
     Disease, Medication, SideEffect, LabTest, Visit, Diagnosis, Prescription,
     Treatment, LabResult, ObservedAdverseEvent, MedicalDocument, RecordIntegrity,
-    InsuranceProvider, InsurancePolicy, InsuranceClaim, ClaimItem,
+    InsuranceProvider, InsuranceAnalyst, InsurancePolicy, InsuranceClaim, ClaimItem,
     Consent, AccessRequest
 )
 
 async def seed():
+    if (
+        not settings.DEMO_MODE
+        or settings.ENVIRONMENT.strip().lower() not in {"development", "dev", "test", "testing"}
+    ):
+        raise RuntimeError("Demo seeding is disabled outside development, test, and demo mode.")
+
     print("[Seed] Initializing database schema...")
     await init_db()
 
@@ -283,6 +291,9 @@ async def seed():
         db.add(ins_prov)
         await db.flush()
 
+        db.add(InsuranceAnalyst(user_id=analyst_user.id, provider_id=ins_prov.id))
+        await db.flush()
+
         policy = InsurancePolicy(
             patient_id=demo_patient.id,
             provider_id=ins_prov.id,
@@ -367,7 +378,7 @@ async def seed():
         req1 = AccessRequest(
             patient_id=demo_patient.id,
             requester_project_id=proj2.id,
-            requested_scope_json=["aggregate_diagnoses", "medication_history", "adverse_events"],
+            requested_scope_json=["aggregate_diagnoses", "medication_history", "lab_summaries"],
             purpose="Analyze cardiovascular medication tolerance and real-world reported symptom clusters.",
             status="PENDING",
             requested_at=now_dt - timedelta(hours=6)
@@ -385,7 +396,7 @@ async def seed():
             valid_until=now_dt + timedelta(days=90),
             status="GRANTED",
             granted_at=now_dt - timedelta(days=10),
-            chain_tx_hash="unanchored-seed-grant-01"
+            chain_tx_hash=None
         )
         db.add(consent1)
 
@@ -401,7 +412,7 @@ async def seed():
                 valid_until=now_dt + timedelta(days=90),
                 status="GRANTED",
                 granted_at=now_dt - timedelta(days=10),
-                chain_tx_hash=f"unanchored-seed-pt-{pt.display_code}"
+                chain_tx_hash=None
             )
             db.add(c)
 

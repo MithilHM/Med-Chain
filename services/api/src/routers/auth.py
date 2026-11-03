@@ -42,6 +42,7 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
             "email": user.email,
             "role": user.role,
             "is_active": user.is_active,
+            "demo_mode": settings.DEMO_MODE,
             "patient_id": patient_id,
             "doctor_id": doctor_id
         }
@@ -63,6 +64,7 @@ async def get_me(current_user: AppUser = Depends(get_current_user), db: AsyncSes
         "email": current_user.email,
         "role": current_user.role,
         "is_active": current_user.is_active,
+        "demo_mode": settings.DEMO_MODE,
         "patient_id": patient_id,
         "doctor_id": doctor_id
     }
@@ -70,8 +72,11 @@ async def get_me(current_user: AppUser = Depends(get_current_user), db: AsyncSes
 @router.post("/demo-switch")
 async def demo_switch(role: str, db: AsyncSession = Depends(get_db)):
     """Convenience helper for local demo presentation only."""
-    if not settings.DEMO_MODE:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo switching disabled in production.")
+    if not settings.DEMO_MODE or settings.ENVIRONMENT.strip().lower() not in {"development", "dev", "test", "testing"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo role switching is available only in development and test environments.",
+        )
     
     role_email_map = {
         "patient": "patient@medchain.local",
@@ -106,6 +111,7 @@ async def demo_switch(role: str, db: AsyncSession = Depends(get_db)):
             "email": user.email,
             "role": user.role,
             "is_active": user.is_active,
+            "demo_mode": True,
             "patient_id": patient_id,
             "doctor_id": doctor_id
         }

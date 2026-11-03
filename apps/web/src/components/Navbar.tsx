@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { ApiClient, UserContext } from "@/lib/api";
 import { Shield, Activity, User, RefreshCw, CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react";
 
@@ -19,20 +20,22 @@ export default function Navbar() {
   ];
 
   const fetchCurrentContext = async () => {
-    try {
-      const stored = localStorage.getItem("medchain_user");
-      if (stored) {
-        setUser(JSON.parse(stored));
-      } else {
-        // Default to doctor on first load
-        const res = await ApiClient.demoSwitch("doctor");
-        setUser(res.user);
+    const token = localStorage.getItem("medchain_token");
+    if (token) {
+      try {
+        const current = await ApiClient.getCurrentUser();
+        setUser(current);
+        localStorage.setItem("medchain_user", JSON.stringify(current));
+      } catch {
+        ApiClient.logout();
       }
-    } catch (_) {
+    } else {
       try {
         const res = await ApiClient.demoSwitch("doctor");
         setUser(res.user);
-      } catch (err) {}
+      } catch {
+        setUser(null);
+      }
     }
 
     try {
@@ -93,15 +96,30 @@ export default function Navbar() {
           )}
           {healthStatus === "degraded" && (
             <span className="inline-flex items-center text-amber-400 font-medium">
-              <AlertTriangle className="w-3 h-3 mr-1" /> Fallback Mode Active
+              <AlertTriangle className="w-3 h-3 mr-1" /> System Degraded
             </span>
           )}
           {healthStatus === "checking" && <span className="text-slate-400">Checking...</span>}
           {healthStatus === "offline" && <span className="text-rose-400 font-medium">Services Offline</span>}
         </div>
 
+        {!user && (
+          <Link href="/login" className="px-3.5 py-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs font-medium hover:bg-cyan-500/20">
+            Sign in
+          </Link>
+        )}
+
+        {user && !user.demo_mode && (
+          <button
+            onClick={() => { ApiClient.logout(); setUser(null); window.location.href = "/login"; }}
+            className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-300 text-xs font-medium hover:bg-slate-800"
+          >
+            Sign out
+          </button>
+        )}
+
         {/* Demo Role Switcher Dropdown */}
-        <div className="relative">
+        {user?.demo_mode && <div className="relative">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             disabled={switching}
@@ -133,7 +151,7 @@ export default function Navbar() {
               ))}
             </div>
           )}
-        </div>
+        </div>}
       </div>
     </header>
   );

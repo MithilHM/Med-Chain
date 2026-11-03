@@ -19,38 +19,82 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [userRole, setUserRole] = useState("");
+  const [researchProjects, setResearchProjects] = useState<any[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const fetchGraph = async (mode: string) => {
+  const fetchGraph = async (mode: string, role: string, selectedProjectId: string) => {
     setLoading(true);
+    setLoadError(null);
     try {
       let res;
       if (mode === "cooccurrence") {
-        res = await ApiClient.getDiseaseCooccurrence();
+        res = await ApiClient.getDiseaseCooccurrence(role === "researcher" ? selectedProjectId : undefined);
       } else if (mode === "side_effects") {
-        res = await ApiClient.getDrugSideEffects();
+        res = await ApiClient.getDrugSideEffects(role === "researcher" ? selectedProjectId : undefined);
       } else {
-        res = await ApiClient.getGraphOverview();
+        res = await ApiClient.getGraphOverview(role === "researcher" ? selectedProjectId : undefined);
       }
       setGraphData(res);
       if (res.nodes?.length > 0) {
         setSelectedNode(res.nodes[0]);
       }
     } catch (err: any) {
-      console.error(err);
+      setGraphData({ nodes: [], edges: [], disclaimer: "" });
+      setSelectedNode(null);
+      setLoadError(err.message || "Unable to load graph data.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchGraph(filterMode);
-  }, [filterMode]);
+    let active = true;
+    async function loadContext() {
+      try {
+        let user = null;
+        const savedUser = window.localStorage.getItem("medchain_user");
+        if (savedUser) {
+          try {
+            user = JSON.parse(savedUser);
+          } catch {
+            window.localStorage.removeItem("medchain_user");
+          }
+        }
+        if (!user?.role) user = (await ApiClient.demoSwitch("doctor")).user;
+        if (!active) return;
+        setUserRole(user.role);
+        if (user.role === "researcher") {
+          const projects = await ApiClient.getResearchProjects();
+          if (!active) return;
+          setResearchProjects(projects);
+          if (projects.length > 0) setProjectId(projects[0].id);
+          else setLoading(false);
+        }
+      } catch (err: any) {
+        if (active) {
+          setLoadError(err.message || "Unable to load graph access context.");
+          setLoading(false);
+        }
+      }
+    }
+    loadContext();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userRole || (userRole === "researcher" && !projectId)) return;
+    fetchGraph(filterMode, userRole, projectId);
+  }, [filterMode, userRole, projectId]);
 
   const handleRebuildGraph = async () => {
     setRebuilding(true);
     try {
       await ApiClient.rebuildGraph();
-      await fetchGraph(filterMode);
+      await fetchGraph(filterMode, userRole, projectId);
       alert("Neo4j knowledge graph successfully rebuilt from authoritative relational database.");
     } catch (err: any) {
       alert(`Rebuild error: ${err.message}`);
@@ -115,16 +159,43 @@ export default function GraphPage() {
             </button>
           </div>
 
-          <button
-            onClick={handleRebuildGraph}
-            disabled={rebuilding}
-            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 active:scale-95 transition-all"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${rebuilding ? "animate-spin text-cyan-400" : ""}`} />
-            <span>{rebuilding ? "Rebuilding..." : "Rebuild Graph"}</span>
-          </button>
+          {userRole === "researcher" && (
+            <select
+              aria-label="Research project consent scope"
+              value={projectId}
+              onChange={(event) => setProjectId(event.target.value)}
+              className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white"
+            >
+              {researchProjects.length === 0 && <option value="">No research projects</option>}
+              {researchProjects.map((project) => (
+                <option key={project.id} value={project.id}>{project.title}</option>
+              ))}
+            </select>
+          )}
+
+          {userRole === "admin" && (
+            <button
+              onClick={handleRebuildGraph}
+              disabled={rebuilding}
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 active:scale-95 transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${rebuilding ? "animate-spin text-cyan-400" : ""}`} />
+              <span>{rebuilding ? "Rebuilding..." : "Rebuild Graph"}</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {loadError && (
+        <div role="alert" className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-800/50 text-xs text-rose-200">
+          {loadError}
+        </div>
+      )}
+      {userRole === "researcher" && !projectId && !loadError && (
+        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
+          Create or select a research project to load graph data covered by active patient consent.
+        </div>
+      )}
 
       {/* Required Association Caveat Banner */}
       <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-800/40 flex items-start space-x-3 text-xs text-amber-200">

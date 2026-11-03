@@ -15,6 +15,12 @@ import {
   ShieldAlert,
 } from "lucide-react";
 
+function verificationStatusClasses(status: string) {
+  if (status === "VERIFIED_MATCH") return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+  if (status === "TAMPER_DETECTED" || status === "DOCUMENT_NOT_FOUND") return "bg-rose-500/10 text-rose-300 border-rose-500/20";
+  return "bg-amber-500/10 text-amber-300 border-amber-500/20";
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -164,7 +170,7 @@ export default function DocumentsPage() {
                     </div>
 
                     <div className="text-right">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${verificationStatusClasses(d.verification_status)}`}>
                         {d.verification_status}
                       </span>
                     </div>
@@ -195,8 +201,10 @@ export default function DocumentsPage() {
                   </div>
                 </div>
 
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${verificationStatusClasses(selectedDocDetail.verification_status)}`}>
+                  {selectedDocDetail.verification_status === "VERIFIED_MATCH"
+                    ? <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                    : <ShieldAlert className="w-3.5 h-3.5 mr-1" />}
                   {selectedDocDetail.verification_status}
                 </span>
               </div>

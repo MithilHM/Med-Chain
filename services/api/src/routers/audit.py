@@ -3,9 +3,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
-from src.models import AppUser, AccessEvent
+from src.models import AppUser, AccessEvent, Doctor, Visit
 from src.schemas.consent import AccessEventOut
-from src.routers.deps import get_current_user, require_role
+from src.routers.deps import get_current_user, require_role, verify_patient_access
 
 router = APIRouter(prefix="/audit", tags=["Audit Trail"])
 
@@ -23,6 +23,15 @@ async def list_audit_events(
         if not pt:
             return []
         query = query.where(AccessEvent.patient_id == pt.id)
+    elif current_user.role == "doctor":
+        doctor = (await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))).scalar_one_or_none()
+        if not doctor:
+            return []
+        assigned_patient_ids = select(Visit.patient_id).where(Visit.doctor_id == doctor.id)
+        query = query.where(AccessEvent.patient_id.in_(assigned_patient_ids))
+        if patient_id:
+            await verify_patient_access(patient_id, current_user, db)
+            query = query.where(AccessEvent.patient_id == patient_id)
     elif patient_id:
         query = query.where(AccessEvent.patient_id == patient_id)
 

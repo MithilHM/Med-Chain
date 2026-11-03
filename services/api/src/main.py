@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.config import settings
-from src.database import check_connection, init_db
+from src.database import init_db
 
 # Configure structured logging
 logging.basicConfig(
@@ -15,7 +15,7 @@ logger = logging.getLogger("medchain.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting MedChain API Application Gateway...")
-    await check_connection()
+    await init_db()
     yield
     logger.info("Shutting down MedChain API Application Gateway...")
 
@@ -74,5 +74,7 @@ def root():
         "status": "operational"
     }
 
-from src.routers.admin import get_system_health
-app.add_api_route("/api/v1/health", get_system_health, methods=["GET"], tags=["System Health & Administration"])
+@app.get("/api/v1/health", tags=["Health"])
+def liveness_check():
+    """Minimal public liveness probe; detailed dependency status is admin-only."""
+    return {"status": "ok"}

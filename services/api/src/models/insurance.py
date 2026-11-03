@@ -9,6 +9,16 @@ class InsuranceProvider(BaseModel):
     provider_code = Column(String(50), unique=True, nullable=False, index=True)
 
     policies = relationship("InsurancePolicy", back_populates="provider")
+    analysts = relationship("InsuranceAnalyst", back_populates="provider", cascade="all, delete-orphan")
+
+class InsuranceAnalyst(BaseModel):
+    __tablename__ = "insurance_analyst"
+
+    user_id = Column(String(36), ForeignKey("app_user.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    provider_id = Column(String(36), ForeignKey("insurance_provider.id"), nullable=False, index=True)
+
+    user = relationship("AppUser", back_populates="insurance_analyst_profile")
+    provider = relationship("InsuranceProvider", back_populates="analysts")
 
 class InsurancePolicy(BaseModel):
     __tablename__ = "insurance_policy"
@@ -44,6 +54,8 @@ class InsuranceClaim(BaseModel):
     __table_args__ = (
         CheckConstraint("claimed_amount >= 0", name="check_claim_amount_non_negative"),
         CheckConstraint("approved_amount >= 0", name="check_approved_amount_non_negative"),
+        CheckConstraint("approved_amount <= claimed_amount", name="check_approved_not_exceed_claim"),
+        CheckConstraint("status IN ('SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED')", name="check_claim_status"),
     )
 
     policy = relationship("InsurancePolicy", back_populates="claims")
@@ -65,6 +77,7 @@ class ClaimItem(BaseModel):
         CheckConstraint("quantity > 0", name="check_item_quantity_positive"),
         CheckConstraint("unit_cost >= 0", name="check_unit_cost_non_negative"),
         CheckConstraint("line_amount >= 0", name="check_line_amount_non_negative"),
+        CheckConstraint("line_amount = ROUND(quantity * unit_cost, 2)", name="check_claim_item_line_total"),
     )
 
     claim = relationship("InsuranceClaim", back_populates="items")

@@ -1,19 +1,19 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime, date
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class ClaimItemCreate(BaseModel):
     treatment_id: Optional[str] = None
-    item_code: str
-    description: str
-    quantity: int
-    unit_cost: Decimal
+    item_code: str = Field(min_length=1, max_length=50)
+    description: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(gt=0)
+    unit_cost: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
 
 class ClaimCreate(BaseModel):
     policy_id: str
     visit_id: str
-    items: List[ClaimItemCreate]
+    items: List[ClaimItemCreate] = Field(min_length=1)
 
 class ClaimItemOut(BaseModel):
     id: str
@@ -44,9 +44,13 @@ class ClaimOut(BaseModel):
         from_attributes = True
 
 class ClaimReviewRequest(BaseModel):
-    decision: str # APPROVED, REJECTED, FLAGGED_INVESTIGATION
-    approved_amount: Optional[Decimal] = None
-    reason: str
+    decision: Literal["APPROVED", "REJECTED", "UNDER_REVIEW"]
+    approved_amount: Optional[Decimal] = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    reason: str = Field(min_length=1, max_length=2000)
+
+class AnomalyResolutionRequest(BaseModel):
+    resolution_status: Literal["APPROVED", "REJECTED"]
+    notes: str = Field(default="", max_length=2000)
 
 class PolicyOut(BaseModel):
     id: str

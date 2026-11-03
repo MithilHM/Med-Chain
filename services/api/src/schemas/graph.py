@@ -23,3 +23,5 @@ class GraphSyncStatusOut(BaseModel):
     last_synced_at: Optional[str] = None
     node_count: int
     edge_count: int
+    mode: Optional[str] = None
+    error: Optional[str] = None

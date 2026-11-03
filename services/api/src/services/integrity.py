@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from src.services.mongo import MongoDocumentService
 
 def canonicalize_document(doc_dict: Dict[str, Any]) -> str:
-    """Produces RFC 8785 style deterministic JSON representation."""
+    """Produces a deterministic sorted-key, compact JSON representation."""
     # We canonicalize the core medical payload: patient_id, visit_id, document_type, title, content, structured_extract
     payload = {
         "patient_id": str(doc_dict.get("patient_id", "")),
@@ -47,5 +47,5 @@ class IntegrityService:
         canonical = canonicalize_document(doc)
         computed = compute_commitment(canonical, salt)
         is_valid = (computed.lower() == expected_commitment.lower())
-        message = "Verification succeeded: cryptographic hash matches anchored commitment." if is_valid else "Tamper detected: document content does not match anchored commitment!"
+        message = "Verification succeeded: cryptographic hash matches the stored integrity commitment." if is_valid else "Tamper detected: document content does not match the stored integrity commitment."
         return is_valid, computed, message

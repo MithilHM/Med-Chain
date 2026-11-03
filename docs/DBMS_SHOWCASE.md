@@ -67,6 +67,8 @@ All 30 PostgreSQL tables conform to 3NF. Zero non-key transitive dependencies ex
 
 ## 2. Advanced SQL Showcase Queries
 
+The admin web console exposes a fixed, read-only subset of these examples at `/admin/dbms`. It demonstrates joins, a CTE, a window aggregate, and a lookup query plan. The API allowlists query IDs instead of accepting SQL from the browser; aggregate result groups with fewer than five patients are suppressed.
+
 ### 2.1 Multi-Table Inner Join with Sorting
 ```sql
 SELECT 

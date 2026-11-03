@@ -24,6 +24,12 @@ export default function IntegrityPage() {
   const [tampering, setTampering] = useState(false);
   const [tamperFeedback, setTamperFeedback] = useState<string | null>(null);
 
+  const statusClasses = (status: string) => {
+    if (status === "VERIFIED_MATCH") return "text-emerald-400";
+    if (status === "TAMPER_DETECTED" || status === "DOCUMENT_NOT_FOUND") return "text-rose-300";
+    return "text-amber-300";
+  };
+
   const loadDocs = async () => {
     setLoading(true);
     try {
@@ -46,6 +52,7 @@ export default function IntegrityPage() {
   const handleVerify = async (docId: string) => {
     setVerifying(true);
     setTamperFeedback(null);
+    setVerificationResult(null);
     try {
       const res = await ApiClient.verifyDocument(docId);
       setVerificationResult(res);
@@ -60,11 +67,15 @@ export default function IntegrityPage() {
   const handleTamperDemo = async (docId: string) => {
     setTampering(true);
     try {
-      const res = await ApiClient.tamperDocumentDemo(docId);
+      await ApiClient.tamperDocumentDemo(docId);
+      setVerificationResult(null);
       setTamperFeedback(
         "Demonstration tampering injected into MongoDB. Now click 'Run Cryptographic Verification' to observe tamper detection in action."
       );
+      await loadDocs();
     } catch (err: any) {
+      setVerificationResult(null);
+      await loadDocs();
       alert(`Tamper demo error: ${err.message}`);
     } finally {
       setTampering(false);
@@ -72,6 +83,9 @@ export default function IntegrityPage() {
   };
 
   const selectedDoc = documents.find((d) => d.id === selectedDocId);
+  const chainVerified = Boolean(
+    verificationResult?.is_valid && verificationResult?.chain_status === "CONFIRMED"
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
@@ -95,7 +109,7 @@ export default function IntegrityPage() {
           <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
             <span className="font-semibold text-cyan-300">1. Canonicalization</span>
             <p className="text-[11px] text-slate-400">
-              The clinical JSON payload is sorted and formatted deterministically per RFC 8785 to eliminate whitespace variance.
+              The clinical JSON payload is serialized with sorted keys and compact formatting to eliminate key-order and whitespace variance.
             </p>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1">
@@ -117,7 +131,7 @@ export default function IntegrityPage() {
         {/* Left Column: Documents Selector */}
         <div className="lg:col-span-5 glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <h2 className="text-sm font-bold text-white">Anchored Records ({documents.length})</h2>
+            <h2 className="text-sm font-bold text-white">Integrity Records ({documents.length})</h2>
             <span className="text-xs text-slate-400 font-mono">SHA-256 Hashes</span>
           </div>
 
@@ -150,7 +164,7 @@ export default function IntegrityPage() {
                       </span>
                     </div>
                     <div className="font-mono text-[11px] text-slate-400 truncate mt-1">
-                      {d.commitment_hash || "No commitment anchored"}
+                      {d.commitment_hash || "No integrity commitment recorded"}
                     </div>
                   </button>
                 );
@@ -179,10 +193,10 @@ export default function IntegrityPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Current Status:</span>
-                  <span className="font-bold text-emerald-400">{selectedDoc.verification_status}</span>
+                  <span className={`font-bold ${statusClasses(selectedDoc.verification_status)}`}>{selectedDoc.verification_status}</span>
                 </div>
                 <div className="pt-2">
-                  <span className="text-slate-400 block mb-1">Anchored Cryptographic Commitment:</span>
+                  <span className="text-slate-400 block mb-1">Stored Integrity Commitment:</span>
                   <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px] text-emerald-300 break-all">
                     {selectedDoc.commitment_hash}
                   </div>
@@ -221,21 +235,32 @@ export default function IntegrityPage() {
               {verificationResult && (
                 <div
                   className={`p-5 rounded-xl border space-y-3 animate-in zoom-in-95 ${
-                    verificationResult.is_valid
+                    chainVerified
                       ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-300"
-                      : "bg-rose-950/20 border-rose-500/40 text-rose-300"
+                      : verificationResult.is_valid
+                        ? "bg-amber-950/20 border-amber-500/40 text-amber-200"
+                        : "bg-rose-950/20 border-rose-500/40 text-rose-300"
                   }`}
                 >
                   <div className="flex items-center space-x-2 text-sm font-bold">
-                    {verificationResult.is_valid ? (
+                    {chainVerified ? (
                       <>
                         <ShieldCheck className="w-5 h-5 text-emerald-400" />
                         <span>Verification PASSED: Record Integrity Confirmed</span>
                       </>
+                    ) : verificationResult.is_valid ? (
+                      <>
+                        <Info className="w-5 h-5 text-amber-400" />
+                        <span>Local hash matches; blockchain confirmation is {verificationResult.chain_status.toLowerCase()}.</span>
+                      </>
                     ) : (
                       <>
                         <ShieldAlert className="w-5 h-5 text-rose-400" />
-                        <span>Verification FAILED: Unauthorized Tampering Detected!</span>
+                        <span>
+                          {verificationResult.verification_status === "DOCUMENT_NOT_FOUND"
+                            ? "Verification FAILED: Stored document payload is missing."
+                            : "Verification FAILED: Stored payload does not match its integrity commitment."}
+                        </span>
                       </>
                     )}
                   </div>
@@ -244,7 +269,7 @@ export default function IntegrityPage() {
 
                   <div className="space-y-1.5 font-mono text-[11px] pt-2 border-t border-slate-800/80">
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Anchored Commitment:</span>
+                      <span className="text-slate-400">Integrity Commitment:</span>
                       <span className="text-slate-200">{verificationResult.expected_commitment.slice(0, 24)}...</span>
                     </div>
                     <div className="flex justify-between">
@@ -256,6 +281,18 @@ export default function IntegrityPage() {
                     <div className="flex justify-between">
                       <span className="text-slate-400">Ledger Status:</span>
                       <span className="text-purple-400 font-semibold">{verificationResult.chain_status}</span>
+                    </div>
+                    <div className="flex justify-between items-start gap-4">
+                      <span className="text-slate-400 shrink-0">Chain Transaction:</span>
+                      <span className="text-slate-200 text-right break-all">
+                        {verificationResult.chain_tx_hash || "Not anchored"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Block Number:</span>
+                      <span className="text-slate-200">
+                        {verificationResult.chain_block_number ?? "—"}
+                      </span>
                     </div>
                   </div>
                 </div>

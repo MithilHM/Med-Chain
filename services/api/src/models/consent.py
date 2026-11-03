@@ -19,6 +19,7 @@ class Consent(BaseModel):
 
     __table_args__ = (
         CheckConstraint("valid_until > valid_from", name="check_consent_validity_window"),
+        CheckConstraint("status IN ('GRANTED', 'REVOKED')", name="check_consent_status"),
     )
 
     patient = relationship("Patient", back_populates="consents")

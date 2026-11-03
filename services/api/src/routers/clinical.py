@@ -7,7 +7,7 @@ from src.models import (
     AppUser, Visit, Disease, Medication, SideEffect, LabTest, Doctor, Patient, Hospital
 )
 from src.schemas.clinical import DiseaseOut, MedicationOut, VisitCreate, VisitOut
-from src.routers.deps import get_current_user, require_role
+from src.routers.deps import get_current_user, require_role, verify_patient_access
 
 router = APIRouter(prefix="", tags=["Clinical Encounters & Catalog"])
 
@@ -31,9 +31,19 @@ async def create_visit(
     if not patient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found.")
 
+    if current_user.role == "doctor":
+        await verify_patient_access(patient.id, current_user, db, action="CREATE_PATIENT_VISIT")
+
     doctor = (await db.execute(select(Doctor).where(Doctor.id == visit_data.doctor_id))).scalar_one_or_none()
     if not doctor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Doctor not found.")
+
+    if current_user.role == "doctor":
+        own_profile = (await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))).scalar_one_or_none()
+        if own_profile is None or doctor.id != own_profile.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Doctors may create visits only under their own profile.")
+        if doctor.hospital_id != visit_data.hospital_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Visit hospital must match the doctor's assigned hospital.")
 
     hosp = (await db.execute(select(Hospital).where(Hospital.id == visit_data.hospital_id))).scalar_one_or_none()
     if not hosp:

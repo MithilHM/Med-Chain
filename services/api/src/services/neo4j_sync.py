@@ -1,18 +1,20 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 from neo4j import AsyncGraphDatabase, AsyncDriver
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.models import (
     Patient, Disease, Diagnosis, Medication, Prescription,
-    SideEffect, ObservedAdverseEvent, Cohort, CohortMembership
+    SideEffect, ObservedAdverseEvent, Visit
 )
 
 logger = logging.getLogger("medchain.graph")
 
 _driver: Optional[AsyncDriver] = None
+_live_graph_status = "UNSYNCHRONIZED"
+_live_graph_error: Optional[str] = None
 
 # Local fallback in-memory graph projection
 _fallback_graph: Dict[str, Any] = {
@@ -47,7 +49,11 @@ class GraphSyncService:
         Extracts all relational entities and relationships from PostgreSQL
         and projects them into Neo4j (or the local fallback projection).
         """
+        global _live_graph_status, _live_graph_error
         driver = await get_neo4j_driver()
+        if driver:
+            _live_graph_status = "SYNCING"
+            _live_graph_error = None
         now_str = datetime.now(timezone.utc).isoformat()
 
         # Fetch clinical records from relational store
@@ -55,9 +61,24 @@ class GraphSyncService:
         medications = (await db.execute(select(Medication))).scalars().all()
         side_effects = (await db.execute(select(SideEffect))).scalars().all()
         patients = (await db.execute(select(Patient))).scalars().all()
-        diagnoses = (await db.execute(select(Diagnosis))).scalars().all()
-        prescriptions = (await db.execute(select(Prescription))).scalars().all()
-        adverse_events = (await db.execute(select(ObservedAdverseEvent))).scalars().all()
+        diagnosis_rows = (await db.execute(
+            select(Diagnosis.id, Visit.patient_id, Diagnosis.disease_id, Diagnosis.severity)
+            .join(Visit, Visit.id == Diagnosis.visit_id)
+        )).all()
+        prescription_rows = (await db.execute(
+            select(Prescription.id, Visit.patient_id, Prescription.medication_id, Prescription.dose_text)
+            .join(Visit, Visit.id == Prescription.visit_id)
+        )).all()
+        adverse_event_rows = (await db.execute(
+            select(
+                ObservedAdverseEvent.id,
+                Prescription.medication_id,
+                ObservedAdverseEvent.side_effect_id,
+                ObservedAdverseEvent.evidence_quality,
+                ObservedAdverseEvent.severity,
+            )
+            .join(Prescription, Prescription.id == ObservedAdverseEvent.prescription_id)
+        )).all()
 
         nodes_dict = {}
         edges_list = []
@@ -90,52 +111,39 @@ class GraphSyncService:
             }
 
         # Edges: HAS_DIAGNOSIS
-        for diag in diagnoses:
-            # Find visit patient
-            from src.models import Visit
-            visit = (await db.execute(select(Visit).where(Visit.id == diag.visit_id))).scalar_one_or_none()
-            if visit:
-                edges_list.append({
-                    "id": f"edge_diag_{diag.id}",
-                    "source": f"patient_{visit.patient_id}",
-                    "target": f"disease_{diag.disease_id}",
-                    "type": "HAS_DIAGNOSIS",
-                    "properties": {"severity": diag.severity}
-                })
+        for diagnosis_id, patient_id, disease_id, severity in diagnosis_rows:
+            edges_list.append({
+                "id": f"edge_diag_{diagnosis_id}",
+                "source": f"patient_{patient_id}",
+                "target": f"disease_{disease_id}",
+                "type": "HAS_DIAGNOSIS",
+                "properties": {"severity": severity}
+            })
 
         # Edges: RECEIVED
-        for pr in prescriptions:
-            from src.models import Visit
-            visit = (await db.execute(select(Visit).where(Visit.id == pr.visit_id))).scalar_one_or_none()
-            if visit:
-                edges_list.append({
-                    "id": f"edge_presc_{pr.id}",
-                    "source": f"patient_{visit.patient_id}",
-                    "target": f"med_{pr.medication_id}",
-                    "type": "RECEIVED",
-                    "properties": {"dose": pr.dose_text}
-                })
+        for prescription_id, patient_id, medication_id, dose_text in prescription_rows:
+            edges_list.append({
+                "id": f"edge_presc_{prescription_id}",
+                "source": f"patient_{patient_id}",
+                "target": f"med_{medication_id}",
+                "type": "RECEIVED",
+                "properties": {"dose": dose_text}
+            })
 
         # Edges: OBSERVED_WITH (Medication -> SideEffect)
-        for ae in adverse_events:
-            if ae.prescription_id:
-                presc = (await db.execute(select(Prescription).where(Prescription.id == ae.prescription_id))).scalar_one_or_none()
-                if presc:
-                    edges_list.append({
-                        "id": f"edge_ae_{ae.id}",
-                        "source": f"med_{presc.medication_id}",
-                        "target": f"se_{ae.side_effect_id}",
-                        "type": "OBSERVED_WITH",
-                        "properties": {"evidence_quality": ae.evidence_quality, "severity": ae.severity}
-                    })
+        for event_id, medication_id, side_effect_id, evidence_quality, severity in adverse_event_rows:
+            edges_list.append({
+                "id": f"edge_ae_{event_id}",
+                "source": f"med_{medication_id}",
+                "target": f"se_{side_effect_id}",
+                "type": "OBSERVED_WITH",
+                "properties": {"evidence_quality": evidence_quality, "severity": severity}
+            })
 
         # Calculate Disease Co-occurrence edges
         patient_diseases: Dict[str, set] = {}
-        for diag in diagnoses:
-            from src.models import Visit
-            visit = (await db.execute(select(Visit).where(Visit.id == diag.visit_id))).scalar_one_or_none()
-            if visit:
-                patient_diseases.setdefault(visit.patient_id, set()).add(diag.disease_id)
+        for _diagnosis_id, patient_id, disease_id, _severity in diagnosis_rows:
+            patient_diseases.setdefault(patient_id, set()).add(disease_id)
 
         cooccur_counts: Dict[tuple, int] = {}
         for pt_id, d_set in patient_diseases.items():
@@ -177,15 +185,22 @@ class GraphSyncService:
                         SET r += $props
                         """
                         await session.run(query, source=e["source"], target=e["target"], props=e["properties"])
+                _live_graph_status = "SYNCHRONIZED"
+                _live_graph_error = None
             except Exception as e:
-                logger.warning(f"Neo4j live projection write failed ({e}); local projection remains consistent.")
+                _live_graph_status = "SYNC_FAILED"
+                _live_graph_error = str(e)[:300]
+                logger.warning("Neo4j live projection write failed; local projection remains available: %s", e)
+
+        result_status = _live_graph_status if driver else _fallback_graph["status"]
 
         return {
-            "status": "SYNCHRONIZED",
+            "status": result_status,
             "node_count": len(nodes_dict),
             "edge_count": len(edges_list),
             "last_synced_at": now_str,
-            "mode": "live_neo4j" if driver else "fallback_graph_projection"
+            "mode": "live_neo4j" if driver else "fallback_graph_projection",
+            "error": _live_graph_error if driver else None,
         }
 
     @staticmethod
@@ -214,10 +229,12 @@ class GraphSyncService:
 
     @staticmethod
     def get_status() -> Dict[str, Any]:
+        is_live = _driver is not None
         return {
-            "status": _fallback_graph["status"],
+            "status": _live_graph_status if is_live else _fallback_graph["status"],
             "last_synced_at": _fallback_graph["last_synced_at"],
             "node_count": len(_fallback_graph["nodes"]),
             "edge_count": len(_fallback_graph["edges"]),
-            "mode": "live_neo4j" if _driver else "fallback_graph_projection"
+            "mode": "live_neo4j" if is_live else "fallback_graph_projection",
+            "error": _live_graph_error if is_live else None,
         }

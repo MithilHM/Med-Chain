@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -15,24 +16,42 @@ import {
   CheckSquare,
   ScrollText,
   ServerCog,
+  Database,
 } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [role, setRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    const updateRole = () => {
+      try {
+        const user = JSON.parse(window.localStorage.getItem("medchain_user") || "null");
+        setRole(typeof user?.role === "string" ? user.role : null);
+      } catch {
+        setRole(null);
+      }
+    };
+    updateRole();
+    window.addEventListener("medchain-user-context-changed", updateRole);
+    return () => window.removeEventListener("medchain-user-context-changed", updateRole);
+  }, []);
 
   const navItems = [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "Patient Records", href: "/patients", icon: Users },
-    { label: "Clinical Notes", href: "/documents", icon: FileText },
-    { label: "Consent Center", href: "/consent", icon: KeyRound },
-    { label: "Research Projects", href: "/research", icon: FlaskConical },
-    { label: "Cohort Explorer", href: "/cohorts", icon: Network },
-    { label: "Disease-Drug Graph", href: "/graph", icon: Share2 },
-    { label: "Insurance Analytics", href: "/insurance", icon: DollarSign },
-    { label: "Record Integrity", href: "/integrity", icon: CheckSquare },
-    { label: "Audit & Ledger", href: "/audit", icon: ScrollText },
-    { label: "System Health", href: "/admin", icon: ServerCog },
+    { label: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["patient", "doctor", "researcher", "insurance_analyst", "admin"] },
+    { label: "Patient Records", href: "/patients", icon: Users, roles: ["patient", "doctor", "admin"] },
+    { label: "Clinical Notes", href: "/documents", icon: FileText, roles: ["patient", "doctor", "admin"] },
+    { label: "Consent Center", href: "/consent", icon: KeyRound, roles: ["patient", "admin"] },
+    { label: "Research Projects", href: "/research", icon: FlaskConical, roles: ["researcher", "admin"] },
+    { label: "Cohort Explorer", href: "/cohorts", icon: Network, roles: ["researcher", "admin"] },
+    { label: "Disease-Drug Graph", href: "/graph", icon: Share2, roles: ["doctor", "researcher", "admin"] },
+    { label: "Insurance Analytics", href: "/insurance", icon: DollarSign, roles: ["insurance_analyst", "admin"] },
+    { label: "Record Integrity", href: "/integrity", icon: CheckSquare, roles: ["patient", "doctor", "admin"] },
+    { label: "Audit & Ledger", href: "/audit", icon: ScrollText, roles: ["patient", "doctor", "admin"] },
+    { label: "System Health", href: "/admin", icon: ServerCog, roles: ["admin"] },
+    { label: "DBMS Showcase", href: "/admin/dbms", icon: Database, roles: ["admin"] },
   ];
+  const visibleItems = navItems.filter((item) => role && item.roles.includes(role));
 
   return (
     <aside className="w-64 border-r border-slate-800/80 bg-slate-950/70 backdrop-blur-xl flex flex-col justify-between p-4 shrink-0 min-h-[calc(100vh-61px)]">
@@ -41,7 +60,7 @@ export default function Sidebar() {
           Platform Modules
         </div>
         <nav className="space-y-0.5">
-          {navItems.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             return (

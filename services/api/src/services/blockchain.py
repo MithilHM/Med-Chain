@@ -10,8 +10,10 @@ logger = logging.getLogger("medchain.blockchain")
 
 _w3: Optional[Web3] = None
 _contract = None
+_contract_address: Optional[str] = None
 _last_check_time: float = 0.0
 _is_connected_cache: bool = False
+_last_chain_id: Optional[int] = None
 
 def get_contract_abi() -> Optional[list]:
     abi_path = os.path.join(
@@ -28,7 +30,7 @@ def get_contract_abi() -> Optional[list]:
     return None
 
 def get_web3_client() -> Optional[Web3]:
-    global _w3, _last_check_time, _is_connected_cache
+    global _w3, _last_check_time, _is_connected_cache, _last_chain_id
     now = time.time()
     # Cache connection check result for 10 seconds to avoid repeating socket timeouts
     if now - _last_check_time < 10.0:
@@ -38,6 +40,17 @@ def get_web3_client() -> Optional[Web3]:
     try:
         w3 = Web3(Web3.HTTPProvider(settings.BLOCKCHAIN_RPC_URL, request_kwargs={'timeout': 0.5}))
         if w3.is_connected():
+            actual_chain_id = int(w3.eth.chain_id)
+            _last_chain_id = actual_chain_id
+            if actual_chain_id != settings.BLOCKCHAIN_CHAIN_ID:
+                logger.error(
+                    "Blockchain RPC chain ID %s does not match configured chain ID %s.",
+                    actual_chain_id,
+                    settings.BLOCKCHAIN_CHAIN_ID,
+                )
+                _w3 = None
+                _is_connected_cache = False
+                return None
             _w3 = w3
             _is_connected_cache = True
             logger.info(f"Connected to local blockchain node at {settings.BLOCKCHAIN_RPC_URL}")
@@ -45,28 +58,63 @@ def get_web3_client() -> Optional[Web3]:
         else:
             _w3 = None
             _is_connected_cache = False
+            _last_chain_id = None
     except Exception:
         _w3 = None
         _is_connected_cache = False
+        _last_chain_id = None
     return None
 
 def get_contract():
-    global _contract
+    global _contract, _contract_address
     w3 = get_web3_client()
-    if w3 and _contract is None:
+    if not w3:
+        return None
+
+    try:
+        checksum_address = Web3.to_checksum_address(settings.CONTRACT_ADDRESS)
+        bytecode = w3.eth.get_code(checksum_address)
+        if not bytecode:
+            _contract = None
+            _contract_address = None
+            return None
+        if _contract is not None and _contract_address == checksum_address:
+            return _contract
+
         abi = get_contract_abi()
-        if abi and settings.CONTRACT_ADDRESS:
-            try:
-                checksum_address = Web3.to_checksum_address(settings.CONTRACT_ADDRESS)
-                _contract = w3.eth.contract(address=checksum_address, abi=abi)
-            except Exception as e:
-                logger.warning(f"Failed to initialize contract instance: {e}")
+        if not abi:
+            return None
+        _contract = w3.eth.contract(address=checksum_address, abi=abi)
+        _contract_address = checksum_address
+    except Exception as e:
+        _contract = None
+        _contract_address = None
+        logger.warning(f"Failed to initialize deployed contract instance: {e}")
     return _contract
 
 def to_bytes32(text: str) -> bytes:
     return Web3.keccak(text=text)
 
 class BlockchainService:
+    @staticmethod
+    async def get_record_commitment(record_ref: str) -> Tuple[str, Optional[str], Optional[int]]:
+        """Read the authoritative record commitment from the deployed contract."""
+        w3 = get_web3_client()
+        contract = get_contract()
+        if not w3 or not contract:
+            return "UNAVAILABLE", None, None
+
+        try:
+            commitment, version, _anchored_at = contract.functions.getRecordCommitment(
+                to_bytes32(record_ref)
+            ).call()
+            if not version or int(commitment) == 0:
+                return "UNANCHORED", None, None
+            return "CONFIRMED", Web3.to_hex(commitment), int(version)
+        except Exception as e:
+            logger.error("Failed to read record commitment from blockchain: %s", e)
+            return "UNAVAILABLE", None, None
+
     @staticmethod
     async def anchor_record(record_ref: str, commitment_hex: str, version: int = 1) -> Tuple[str, str, Optional[int]]:
         w3 = get_web3_client()
@@ -183,18 +231,46 @@ class BlockchainService:
     @staticmethod
     def get_status() -> Dict[str, Any]:
         w3 = get_web3_client()
-        if w3 and w3.is_connected():
+        if not w3:
+            chain_mismatch = _last_chain_id is not None and _last_chain_id != settings.BLOCKCHAIN_CHAIN_ID
             return {
-                "status": "connected",
+                "status": "chain_mismatch" if chain_mismatch else "disconnected",
                 "chain_id": settings.BLOCKCHAIN_CHAIN_ID,
-                "latest_block": w3.eth.block_number,
+                "actual_chain_id": _last_chain_id,
                 "contract_address": settings.CONTRACT_ADDRESS,
-                "mode": "live_local_chain"
+                "mode": "chain_mismatch" if chain_mismatch else "unanchored_demo_mode",
+                "note": "Blockchain RPC is offline or its chain ID does not match configuration.",
             }
+
+        contract = get_contract()
+        if not contract:
+            return {
+                "status": "contract_unavailable",
+                "chain_id": settings.BLOCKCHAIN_CHAIN_ID,
+                "actual_chain_id": _last_chain_id,
+                "contract_address": settings.CONTRACT_ADDRESS,
+                "mode": "rpc_connected_contract_unavailable",
+                "note": "RPC is reachable, but contract bytecode or its ABI is unavailable.",
+            }
+
+        try:
+            latest_block = w3.eth.block_number
+        except Exception as e:
+            logger.warning("Blockchain RPC stopped responding during status check: %s", e)
+            return {
+                "status": "disconnected",
+                "chain_id": settings.BLOCKCHAIN_CHAIN_ID,
+                "actual_chain_id": _last_chain_id,
+                "contract_address": settings.CONTRACT_ADDRESS,
+                "mode": "rpc_unavailable",
+                "note": "The blockchain RPC stopped responding during the status check.",
+            }
+
         return {
-            "status": "disconnected",
+            "status": "connected",
             "chain_id": settings.BLOCKCHAIN_CHAIN_ID,
+            "actual_chain_id": _last_chain_id,
+            "latest_block": latest_block,
             "contract_address": settings.CONTRACT_ADDRESS,
-            "mode": "unanchored_demo_mode",
-            "note": "Local Hardhat node is offline. Events and commitments are recorded as unanchored without claiming confirmed on-chain status."
+            "mode": "live_local_chain",
         }

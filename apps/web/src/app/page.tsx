@@ -8,96 +8,173 @@ import {
   FileCheck2,
   KeyRound,
   Network,
+  FlaskConical,
   AlertTriangle,
   ArrowRight,
   ShieldCheck,
   Database,
-  Cpu,
   Layers,
   Sparkles
 } from "lucide-react";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
-    patients: 0,
-    consents: 0,
-    documents: 0,
-    flaggedClaims: 0,
-    graphEdges: 0,
+    patients: null as number | null,
+    consents: null as number | null,
+    documents: null as number | null,
+    flaggedClaims: null as number | null,
+    graphEdges: null as number | null,
+    researchProjects: null as number | null,
+    cohorts: null as number | null,
   });
+  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [health, setHealth] = useState<any>(null);
 
   useEffect(() => {
-    async function loadDashboard() {
+    const updateRole = () => {
       try {
-        const [pts, consents, claims, graphStatus, h] = await Promise.all([
-          ApiClient.getPatients().catch(() => []),
-          ApiClient.getConsents().catch(() => []),
-          ApiClient.getInsuranceClaims(true).catch(() => []),
-          ApiClient.getGraphOverview().catch(() => ({ edges: [] })),
-          ApiClient.getSystemHealth().catch(() => null),
+        const user = JSON.parse(window.localStorage.getItem("medchain_user") || "null");
+        setRole(typeof user?.role === "string" ? user.role : null);
+      } catch {
+        setRole(null);
+      }
+    };
+    updateRole();
+    window.addEventListener("medchain-user-context-changed", updateRole);
+    return () => window.removeEventListener("medchain-user-context-changed", updateRole);
+  }, []);
+
+  useEffect(() => {
+    if (!role) return;
+    let active = true;
+    const safe = <T,>(promise: Promise<T>) => promise.catch(() => null);
+
+    async function loadDashboard() {
+      setLoading(true);
+      try {
+        const canSeePatients = ["patient", "doctor", "admin"].includes(role!);
+        const canSeeConsents = ["patient", "admin"].includes(role!);
+        const canSeeDocuments = ["patient", "doctor", "admin"].includes(role!);
+        const canSeeClaims = ["insurance_analyst", "admin"].includes(role!);
+        const canSeeGraph = ["doctor", "admin"].includes(role!);
+        const canSeeResearch = ["researcher", "admin"].includes(role!);
+
+        const [healthResult, patientsResult, consentsResult, documentsResult, claimsResult, graphResult] = await Promise.all([
+          safe(ApiClient.getSystemHealth()),
+          canSeePatients ? safe(ApiClient.getPatients()) : Promise.resolve(null),
+          canSeeConsents ? safe(ApiClient.getConsents()) : Promise.resolve(null),
+          canSeeDocuments ? safe(ApiClient.getDocuments()) : Promise.resolve(null),
+          canSeeClaims ? safe(ApiClient.getInsuranceClaims(true)) : Promise.resolve(null),
+          canSeeGraph ? safe(ApiClient.getGraphOverview()) : Promise.resolve(null),
         ]);
 
+        let projects: any[] | null = null;
+        let cohorts: any[] | null = null;
+        let researcherGraph: any = null;
+        if (canSeeResearch) {
+          projects = await safe(ApiClient.getResearchProjects());
+          const activeProject = projects?.find((project) => project.status === "ACTIVE") ?? projects?.[0];
+          if (activeProject) {
+            [researcherGraph, cohorts] = await Promise.all([
+              safe(ApiClient.getGraphOverview(activeProject.id)),
+              safe(ApiClient.getCohorts(activeProject.id)),
+            ]);
+          }
+        }
+
+        if (!active) return;
+        const graphStatus = role === "researcher" ? researcherGraph : graphResult;
+        const now = Date.now();
         setStats({
-          patients: pts.length,
-          consents: consents.filter((c: any) => c.status === "GRANTED").length,
-          documents: pts.length * 2,
-          flaggedClaims: claims.length,
-          graphEdges: graphStatus.edges?.length || 51,
+          patients: patientsResult?.length ?? null,
+          consents: consentsResult?.filter((consent: any) =>
+            consent.status === "GRANTED" &&
+            !consent.revoked_at &&
+            Date.parse(consent.valid_from) <= now &&
+            Date.parse(consent.valid_until) > now
+          ).length ?? null,
+          documents: documentsResult?.filter((doc: any) => Boolean(doc.commitment_hash)).length ?? null,
+          flaggedClaims: claimsResult?.length ?? null,
+          graphEdges: graphStatus?.edges?.length ?? null,
+          researchProjects: projects?.length ?? null,
+          cohorts: cohorts?.length ?? null,
         });
-        setHealth(h);
-      } catch (err) {
-        console.error(err);
+        setHealth(healthResult);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
-    loadDashboard();
-  }, []);
+    void loadDashboard();
+    return () => { active = false; };
+  }, [role]);
 
   const metricCards = [
     {
-      title: "Synthetic Patients",
-      value: loading ? "..." : stats.patients,
+      title: role === "patient" ? "My Patient Record" : role === "doctor" ? "Assigned Patients" : "Synthetic Patients",
+      value: loading ? "..." : stats.patients ?? "N/A",
       sub: "Relational ACID Store",
       icon: Users,
       color: "from-blue-500/20 to-cyan-500/10 text-cyan-400 border-cyan-500/30",
       href: "/patients",
+      roles: ["patient", "doctor", "admin"],
     },
     {
       title: "Active Consents",
-      value: loading ? "..." : stats.consents,
+      value: loading ? "..." : stats.consents ?? "N/A",
       sub: "Patient-Governed Scope",
       icon: KeyRound,
       color: "from-purple-500/20 to-indigo-500/10 text-purple-400 border-purple-500/30",
       href: "/consent",
+      roles: ["patient", "admin"],
     },
     {
-      title: "Anchored Commitments",
-      value: loading ? "..." : stats.documents,
-      sub: "Salted SHA-256 Hashes",
+      title: "Integrity Commitments",
+      value: loading ? "..." : stats.documents ?? "N/A",
+      sub: "Off-chain salted SHA-256 hashes",
       icon: FileCheck2,
       color: "from-emerald-500/20 to-teal-500/10 text-emerald-400 border-emerald-500/30",
       href: "/integrity",
+      roles: ["patient", "doctor", "admin"],
     },
     {
       title: "Graph Projections",
-      value: loading ? "..." : `${stats.graphEdges} Edges`,
-      sub: "Neo4j Derived Knowledge",
+      value: loading ? "..." : stats.graphEdges === null ? "N/A" : `${stats.graphEdges} Edges`,
+      sub: role === "researcher" ? "Consent scoped relationships" : "Neo4j Derived Knowledge",
       icon: Network,
       color: "from-sky-500/20 to-blue-500/10 text-sky-400 border-sky-500/30",
       href: "/graph",
+      roles: ["doctor", "researcher", "admin"],
     },
     {
       title: "Claims For Review",
-      value: loading ? "..." : stats.flaggedClaims,
+      value: loading ? "..." : stats.flaggedClaims ?? "N/A",
       sub: "Explainable Anomaly Rules",
       icon: AlertTriangle,
       color: "from-amber-500/20 to-orange-500/10 text-amber-400 border-amber-500/30",
       href: "/insurance",
+      roles: ["insurance_analyst", "admin"],
+    },
+    {
+      title: "Research Projects",
+      value: loading ? "..." : stats.researchProjects ?? "N/A",
+      sub: "Projects you manage",
+      icon: FlaskConical,
+      color: "from-fuchsia-500/20 to-purple-500/10 text-fuchsia-400 border-fuchsia-500/30",
+      href: "/research",
+      roles: ["researcher", "admin"],
+    },
+    {
+      title: "Consented Cohorts",
+      value: loading ? "..." : stats.cohorts ?? "N/A",
+      sub: "Current project scope",
+      icon: Layers,
+      color: "from-teal-500/20 to-emerald-500/10 text-teal-400 border-teal-500/30",
+      href: "/cohorts",
+      roles: ["researcher", "admin"],
     },
   ];
+  const visibleMetricCards = metricCards.filter((card) => role && card.roles.includes(role));
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
@@ -121,12 +198,12 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {metricCards.map((card, idx) => {
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {visibleMetricCards.map((card) => {
           const Icon = card.icon;
           return (
             <Link
-              key={idx}
+              key={card.title}
               href={card.href}
               className={`p-5 rounded-2xl border glass-card bg-gradient-to-br ${card.color} flex flex-col justify-between`}
             >
@@ -191,7 +268,7 @@ export default function DashboardPage() {
                 <span className="px-2 py-0.5 rounded text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20">Audit Trail</span>
               </div>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Append-only ledger anchoring salted SHA-256 commitments and consent grant/revocation events. Zero PII stored on-chain.
+                Append-only ledger anchoring salted SHA-256 commitments and consent grant/revocation events. Raw medical data and direct identifiers stay off-chain; opaque hashes are used for references.
               </p>
             </div>
           </div>
@@ -208,7 +285,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-2.5">
-            <Link
+            {role && ["patient", "admin"].includes(role) && <Link
               href="/consent"
               className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-cyan-500/40 flex items-center justify-between transition-all group"
             >
@@ -217,9 +294,9 @@ export default function DashboardPage() {
                 <div className="text-[11px] text-slate-400">Patient grants or revokes research access</div>
               </div>
               <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all" />
-            </Link>
+            </Link>}
 
-            <Link
+            {role && ["researcher", "admin"].includes(role) && <Link
               href="/research"
               className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-purple-500/40 flex items-center justify-between transition-all group"
             >
@@ -228,9 +305,9 @@ export default function DashboardPage() {
                 <div className="text-[11px] text-slate-400">Consent-gated queries with instant 403 denial</div>
               </div>
               <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-purple-400 group-hover:translate-x-1 transition-all" />
-            </Link>
+            </Link>}
 
-            <Link
+            {role && ["patient", "doctor", "admin"].includes(role) && <Link
               href="/integrity"
               className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-emerald-500/40 flex items-center justify-between transition-all group"
             >
@@ -239,9 +316,9 @@ export default function DashboardPage() {
                 <div className="text-[11px] text-slate-400">Salted hash matching & tamper detection</div>
               </div>
               <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all" />
-            </Link>
+            </Link>}
 
-            <Link
+            {role && ["insurance_analyst", "admin"].includes(role) && <Link
               href="/insurance"
               className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-amber-500/40 flex items-center justify-between transition-all group"
             >
@@ -250,7 +327,7 @@ export default function DashboardPage() {
                 <div className="text-[11px] text-slate-400">Explainable duplicate billing detection</div>
               </div>
               <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-amber-400 group-hover:translate-x-1 transition-all" />
-            </Link>
+            </Link>}
           </div>
         </div>
       </div>

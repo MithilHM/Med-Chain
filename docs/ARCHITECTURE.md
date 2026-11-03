@@ -5,9 +5,9 @@ MedChain is an enterprise-grade academic demonstration platform designed to show
 
 ### Key Architectural Principles:
 1. **Clear Source-of-Truth Hierarchy:** Relational data in PostgreSQL is authoritative. Document and graph stores are specialized functional projections.
-2. **Strict Off-Chain Privacy:** No Personally Identifiable Information (PII), clinical text, diagnosis details, or patient IDs are ever written to the blockchain. The ledger stores only opaque salted cryptographic commitments and event hashes.
+2. **Off-Chain Clinical Records:** Raw patient identifiers, clinical text, and diagnosis details stay off-chain. Blockchain calls use opaque hashes of internal references and salted document commitments; those hashes should still be treated as sensitive metadata.
 3. **Defense-in-Depth Authorization:** Hiding a UI button is not security. Every request is independently authorized by a central policy engine verifying actor role, explicit ownership, active patient consent, and expiration timestamps.
-4. **Resilient Local Multi-Store Orchestration:** The platform gracefully handles store degradation. If MongoDB, Neo4j, or Hardhat is temporarily unreachable, core relational transactions remain consistent, and operations enter explicit pending or retryable states.
+4. **Explicit Store Degradation:** Development and test can use encrypted local document and in-memory graph fallbacks. Production document operations require MongoDB. Blockchain writes are best-effort inline calls, and graph data is rebuilt by an admin action; a transactional outbox worker is not yet implemented.
 
 ---
 
@@ -59,23 +59,21 @@ MedChain is an enterprise-grade academic demonstration platform designed to show
 ## 4. Cross-Store Integration & Reliability Patterns
 
 ### 4.1 Document Linking & Integrity Architecture
-- When a doctor creates a clinical document, the raw clinical narrative is written to MongoDB's `medical_documents` collection, returning an opaque UUID `_id`.
+- When a doctor creates a clinical document, the raw clinical narrative is written to MongoDB's `medical_documents` collection (or the encrypted local fallback in development and test), returning an opaque UUID `_id`.
 - A relational metadata record is created in PostgreSQL's `medical_document` table containing `patient_id`, `visit_id`, `document_type`, and `mongo_document_id`.
 - Simultaneously, a canonical deterministic JSON serialization of the document is generated:
   $$\text{Commitment} = \text{SHA256}(\text{CanonicalJSON} + \text{OffChainSalt})$$
-- The commitment hash is recorded in PostgreSQL's `record_integrity` table and queued for anchoring on the blockchain.
+- The commitment hash is recorded in PostgreSQL's `record_integrity` table, then submitted to the blockchain inline on a best-effort basis. The result is recorded as confirmed, failed, or unanchored.
 
-### 4.2 Outbox Pattern for Cross-Store Synchronization
-- Direct distributed 2-Phase Commit (2PC) is brittle and inappropriate across heterogeneous stores.
-- MedChain employs an **Outbox Pattern**:
-  1. Relational state changes write an event entry to PostgreSQL's `outbox_event` table in the same local database transaction.
-  2. An outbox processor reads uncommitted events and syncs projections to Neo4j and transaction commitments to the Hardhat network.
-  3. If Neo4j or Hardhat is offline, the outbox record increments `attempt_count` with an exponential backoff, ensuring eventual consistency.
+### 4.2 Cross-Store Synchronization Status
+- The schema includes an `outbox_event` table, but current routes do not write to it and no outbox processor runs. It does not yet provide retry or eventual-delivery guarantees.
+- Consent and access events are submitted to Hardhat inline, with database state remaining authoritative. Blockchain outages therefore leave events unanchored or failed until a retry mechanism is implemented.
+- Neo4j is rebuilt from relational records by an admin endpoint. There is no automatic graph projection after each relational change.
 
 ### 4.3 Graph Synchronization Engine
 - Neo4j projections represent aggregate disease-drug-side-effect relationships.
 - The synchronization service queries committed clinical data from PostgreSQL and merges nodes and relationships into Neo4j using idempotent Cypher queries (`MERGE`).
-- An administrative endpoint `/api/v1/admin/graph/rebuild` drops all graph nodes and repopulates the entire projection from authoritative PostgreSQL records.
+- An administrative endpoint `/api/v1/admin/graph/rebuild` drops all graph nodes and repopulates the entire projection from authoritative relational records.
 
 ---
 

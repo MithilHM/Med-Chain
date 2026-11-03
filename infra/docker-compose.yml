@@ -25,10 +25,13 @@ services:
     restart: always
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-medchain}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-medchain_mongo_pass}
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --quiet --username '${MONGO_ROOT_USERNAME:-medchain}' --password '${MONGO_ROOT_PASSWORD:-medchain_mongo_pass}' --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -59,15 +62,30 @@ services:
     restart: always
     ports:
       - "8545:8545"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8545',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',method:'eth_getCode',params:['0x5FbDB2315678afecb367f032d93F642f64180aa3','latest'],id:1})}).then(r=>r.json()).then(x=>process.exit(x.result&&x.result!=='0x'?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   api:
     build:
-      context: ../services/api
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: services/api/Dockerfile
     container_name: medchain_api
     restart: always
     env_file:
       - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-medchain_user}:${POSTGRES_PASSWORD:-medchain_secret_pass}@postgres:5432/${POSTGRES_DB:-medchain_db}
+      DATABASE_SYNC_URL: postgresql://${POSTGRES_USER:-medchain_user}:${POSTGRES_PASSWORD:-medchain_secret_pass}@postgres:5432/${POSTGRES_DB:-medchain_db}
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-medchain}:${MONGO_ROOT_PASSWORD:-medchain_mongo_pass}@mongodb:27017/?authSource=admin
+      NEO4J_URI: bolt://neo4j:7687
+      BLOCKCHAIN_RPC_URL: http://hardhat:8545
     ports:
       - "8000:8000"
     depends_on:
@@ -77,17 +95,19 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+      hardhat:
+        condition: service_healthy
 
   web:
     build:
       context: ../apps/web
       dockerfile: Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:8000
     container_name: medchain_web
     restart: always
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
     depends_on:
       - api
 

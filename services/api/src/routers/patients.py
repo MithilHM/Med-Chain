@@ -21,8 +21,15 @@ async def list_patients(
         pt = (await db.execute(select(Patient).where(Patient.user_id == current_user.id))).scalar_one_or_none()
         return [pt] if pt else []
     
-    # Doctor or Admin
-    pts = (await db.execute(select(Patient).order_by(Patient.display_code.asc()))).scalars().all()
+    patient_query = select(Patient).order_by(Patient.display_code.asc())
+    if current_user.role == "doctor":
+        doctor = (await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))).scalar_one_or_none()
+        if not doctor:
+            return []
+        patient_query = patient_query.join(Visit, Visit.patient_id == Patient.id).where(
+            Visit.doctor_id == doctor.id
+        ).distinct()
+    pts = (await db.execute(patient_query)).scalars().all()
     return pts
 
 @router.get("/{patient_id}", response_model=PatientOut)
@@ -31,7 +38,7 @@ async def get_patient(
     current_user: AppUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    await verify_patient_access(patient_id, current_user, db)
+    await verify_patient_access(patient_id, current_user, db, action="READ_PATIENT_PROFILE")
     pt = (await db.execute(select(Patient).where(Patient.id == patient_id))).scalar_one_or_none()
     if not pt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found.")
@@ -43,7 +50,7 @@ async def get_patient_timeline(
     current_user: AppUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    await verify_patient_access(patient_id, current_user, db)
+    await verify_patient_access(patient_id, current_user, db, action="READ_PATIENT_TIMELINE")
     pt = (await db.execute(select(Patient).where(Patient.id == patient_id))).scalar_one_or_none()
     if not pt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found.")

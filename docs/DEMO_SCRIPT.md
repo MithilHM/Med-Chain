@@ -21,7 +21,7 @@ All demo users share the default password: **`Password123!`**
 ## 12-Step Demonstration Narrative
 
 ### Step 1: System Baseline & Multi-Store Health Check
-1. **Navigate to:** `/admin` on the Web UI or execute `GET /api/v1/health`.
+1. **Navigate to:** `/admin` on the Web UI, or sign in as an admin and execute `GET /api/v1/admin/health`. Public `GET /api/v1/health` is only a liveness probe.
 2. **Observe:** The 4-store infrastructure probe indicators:
    - **PostgreSQL / Relational Store:** Operational (or resilient local SQLite fallback with 30 authoritative tables).
    - **MongoDB / Document Store:** Operational (or local filesystem document store fallback).
@@ -128,7 +128,7 @@ All demo users share the default password: **`Password123!`**
 2. **Step A (Clean Baseline):**
    - Click **"Verify Document"** on discharge note `DOC-100201-01`.
    - Result: **VERIFIED MATCH (Green)**.
-   - Canonical RFC 8785 JSON representation matches salted SHA-256 commitment on the ledger.
+   - Sorted-key compact JSON representation matches the salted SHA-256 commitment and, when available, the on-chain anchor.
 3. **Step B (Tamper Simulation):**
    - Click **"Simulate Tamper Demo"**.
    - Backdoor injection modifies a clinical note field (e.g., changes medication dosage in MongoDB).

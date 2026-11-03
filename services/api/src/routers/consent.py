@@ -16,8 +16,14 @@ from src.routers.deps import get_current_user, require_role
 router = APIRouter(prefix="", tags=["Research Projects & Patient Consent"])
 
 @router.get("/research-projects")
-async def list_research_projects(db: AsyncSession = Depends(get_db)):
-    projects = (await db.execute(select(ResearchProject).order_by(ResearchProject.created_at.desc()))).scalars().all()
+async def list_research_projects(
+    current_user: AppUser = Depends(require_role(["researcher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    project_query = select(ResearchProject).order_by(ResearchProject.created_at.desc())
+    if current_user.role == "researcher":
+        project_query = project_query.where(ResearchProject.created_by == current_user.id)
+    projects = (await db.execute(project_query)).scalars().all()
     out = []
     for p in projects:
         org = (await db.execute(select(ResearchOrganization).where(ResearchOrganization.id == p.organization_id))).scalar_one_or_none()
@@ -59,7 +65,7 @@ async def create_research_project(
 
 @router.get("/access-requests", response_model=List[AccessRequestOut])
 async def list_access_requests(
-    current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(require_role(["patient", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
     query = select(AccessRequest)
@@ -103,6 +109,13 @@ async def create_access_request(
     project = (await db.execute(select(ResearchProject).where(ResearchProject.id == req_in.project_id))).scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research project not found.")
+    if project.status != "ACTIVE":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Access requests require an active research project.")
+    if current_user.role == "researcher" and project.created_by != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Researchers can request consent only for projects they own.",
+        )
 
     req = AccessRequest(
         patient_id=patient.id,
@@ -135,7 +148,9 @@ async def decide_access_request(
     current_user: AppUser = Depends(require_role(["patient", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
-    req = (await db.execute(select(AccessRequest).where(AccessRequest.id == request_id))).scalar_one_or_none()
+    req = (await db.execute(
+        select(AccessRequest).where(AccessRequest.id == request_id).with_for_update()
+    )).scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found.")
 
@@ -145,16 +160,40 @@ async def decide_access_request(
         if not pt or pt.id != req.patient_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot decide another patient's consent request.")
 
+    if req.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This access request has already been decided.",
+        )
+
+    requested_scopes = set(req.requested_scope_json or [])
+    approved_scopes = set(decision_in.approved_scopes or requested_scopes)
+    if decision_in.decision == "APPROVED" and not approved_scopes.issubset(requested_scopes):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Granted consent scopes must be a subset of the requested scopes.",
+        )
+
+    if decision_in.decision == "APPROVED":
+        project = (await db.execute(
+            select(ResearchProject).where(ResearchProject.id == req.requester_project_id)
+        )).scalar_one_or_none()
+        if not project or project.status != "ACTIVE":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Consent cannot be granted to an inactive research project.",
+            )
+
     now = datetime.now(timezone.utc)
     req.status = decision_in.decision
     req.decided_at = now
 
     created_consent = None
+    chain_status = "NOT_APPLICABLE"
     if decision_in.decision == "APPROVED":
         # Create Consent record
-        valid_days = decision_in.valid_days or 30
-        valid_until = now + timedelta(days=valid_days)
-        scopes = decision_in.approved_scopes or req.requested_scope_json
+        valid_until = now + timedelta(days=decision_in.valid_days)
+        scopes = sorted(approved_scopes)
 
         consent = Consent(
             patient_id=req.patient_id,
@@ -174,7 +213,7 @@ async def decide_access_request(
         chain_status, tx_hash, block_num = await BlockchainService.record_consent_granted(
             consent.id, consent.patient_id, consent.requester_project_id, int(valid_until.timestamp())
         )
-        consent.chain_tx_hash = tx_hash
+        consent.chain_tx_hash = tx_hash if chain_status == "CONFIRMED" else None
         created_consent = consent
 
     await db.commit()
@@ -182,12 +221,13 @@ async def decide_access_request(
         "status": req.status,
         "request_id": req.id,
         "consent_id": created_consent.id if created_consent else None,
-        "chain_tx_hash": created_consent.chain_tx_hash if created_consent else None
+        "chain_tx_hash": created_consent.chain_tx_hash if created_consent else None,
+        "chain_status": chain_status,
     }
 
 @router.get("/consents", response_model=List[ConsentOut])
 async def list_consents(
-    current_user: AppUser = Depends(get_current_user),
+    current_user: AppUser = Depends(require_role(["patient", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Consent)
@@ -226,9 +266,17 @@ async def revoke_consent(
     current_user: AppUser = Depends(require_role(["patient", "admin"])),
     db: AsyncSession = Depends(get_db)
 ):
-    consent = (await db.execute(select(Consent).where(Consent.id == consent_id))).scalar_one_or_none()
+    consent = (await db.execute(
+        select(Consent).where(Consent.id == consent_id).with_for_update()
+    )).scalar_one_or_none()
     if not consent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consent record not found.")
+
+    if consent.status != "GRANTED" or consent.revoked_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Consent is no longer active.",
+        )
 
     if current_user.role == "patient":
         pt = (await db.execute(select(Patient).where(Patient.user_id == current_user.id))).scalar_one_or_none()
@@ -251,5 +299,6 @@ async def revoke_consent(
         "status": "REVOKED",
         "consent_id": consent.id,
         "revoked_at": consent.revoked_at,
-        "chain_tx_hash": tx_hash
+        "chain_tx_hash": tx_hash if chain_status == "CONFIRMED" else None,
+        "chain_status": chain_status,
     }

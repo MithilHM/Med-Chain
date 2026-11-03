@@ -20,6 +20,8 @@ export default function ConsentPage() {
   const [consents, setConsents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selectedScopes, setSelectedScopes] = useState<Record<string, string[]>>({});
+  const [validDays, setValidDays] = useState<Record<string, number>>({});
 
   const loadData = async () => {
     setLoading(true);
@@ -44,7 +46,13 @@ export default function ConsentPage() {
   const handleDecision = async (requestId: string, decision: "APPROVED" | "REJECTED") => {
     setActionLoading(requestId);
     try {
-      await ApiClient.decideAccessRequest(requestId, decision, 30);
+      const request = requests.find((item) => item.id === requestId);
+      const scopes = selectedScopes[requestId] ?? request?.requested_scopes ?? [];
+      if (decision === "APPROVED" && scopes.length === 0) {
+        alert("Select at least one scope to grant access.");
+        return;
+      }
+      await ApiClient.decideAccessRequest(requestId, decision, validDays[requestId] ?? 30, decision === "APPROVED" ? scopes : undefined);
       await loadData();
     } catch (err: any) {
       alert(`Decision error: ${err.message}`);
@@ -59,7 +67,12 @@ export default function ConsentPage() {
     }
     setActionLoading(consentId);
     try {
-      await ApiClient.revokeConsent(consentId);
+      const result = await ApiClient.revokeConsent(consentId);
+      if (result.chain_status === "CONFIRMED") {
+        alert("Consent revoked. The revocation event was confirmed on the local blockchain.");
+      } else {
+        alert(`Consent revoked in MedChain. Blockchain status: ${result.chain_status || "UNANCHORED"}.`);
+      }
       await loadData();
     } catch (err: any) {
       alert(`Revocation error: ${err.message}`);
@@ -111,21 +124,41 @@ export default function ConsentPage() {
                   <div className="text-[11px] text-slate-400 mt-0.5">{req.purpose}</div>
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
-                    Requested Scopes
+                    Choose scopes to grant
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {req.requested_scopes?.map((sc: string, idx: number) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-mono"
-                      >
-                        {sc}
-                      </span>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {req.requested_scopes?.map((sc: string) => {
+                      const selected = selectedScopes[req.id] ?? req.requested_scopes;
+                      return (
+                        <label key={sc} className="flex items-center gap-2 text-[11px] text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(sc)}
+                            onChange={(event) => setSelectedScopes((current) => {
+                              const next = current[req.id] ?? req.requested_scopes;
+                              return { ...current, [req.id]: event.target.checked ? [...next, sc] : next.filter((scope: string) => scope !== sc) };
+                            })}
+                            className="accent-purple-500"
+                          />
+                          <span className="font-mono">{sc}</span>
+                        </label>
+                      );
                     ))}
                   </div>
                 </div>
+
+                <label className="flex items-center justify-between text-[11px] text-slate-400">
+                  Consent duration
+                  <select
+                    value={validDays[req.id] ?? 30}
+                    onChange={(event) => setValidDays((current) => ({ ...current, [req.id]: Number(event.target.value) }))}
+                    className="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-slate-200"
+                  >
+                    {[30, 90, 180, 365].map((days) => <option key={days} value={days}>{days} days</option>)}
+                  </select>
+                </label>
 
                 <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end space-x-2">
                   <button
@@ -204,7 +237,7 @@ export default function ConsentPage() {
                       </span>
                       <span>•</span>
                       <span className="font-mono text-[10px] text-purple-400">
-                        Tx: {c.chain_tx_hash ? c.chain_tx_hash.slice(0, 16) + "..." : "Local Anchor"}
+                        Grant Tx: {c.chain_tx_hash ? c.chain_tx_hash.slice(0, 16) + "..." : "Not anchored"}
                       </span>
                     </div>
                   </div>
