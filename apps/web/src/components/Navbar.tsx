@@ -20,22 +20,13 @@ export default function Navbar() {
   ];
 
   const fetchCurrentContext = async () => {
-    const token = localStorage.getItem("medchain_token");
-    if (token) {
-      try {
-        const current = await ApiClient.getCurrentUser();
-        setUser(current);
-        localStorage.setItem("medchain_user", JSON.stringify(current));
-      } catch {
-        ApiClient.logout();
-      }
-    } else {
-      try {
-        const res = await ApiClient.demoSwitch("doctor");
-        setUser(res.user);
-      } catch {
-        setUser(null);
-      }
+    try {
+      const current = await ApiClient.getCurrentUser();
+      setUser(current);
+      localStorage.setItem("medchain_user", JSON.stringify(current));
+    } catch {
+      ApiClient.clearLocalUser();
+      setUser(null);
     }
 
     try {
@@ -77,7 +68,7 @@ export default function Navbar() {
           <div className="flex items-center space-x-2">
             <span className="font-bold tracking-tight text-lg text-white">MED<span className="text-cyan-400">CHAIN</span></span>
             <span className="text-[10px] tracking-widest font-mono uppercase px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
-              DBMS Capstone
+              PILOT PROTOTYPE
             </span>
           </div>
           <p className="text-xs text-slate-400">Privacy-Preserving Healthcare Intelligence & Ledger Audit</p>
@@ -109,9 +100,9 @@ export default function Navbar() {
           </Link>
         )}
 
-        {user && !user.demo_mode && (
+        {user && (
           <button
-            onClick={() => { ApiClient.logout(); setUser(null); window.location.href = "/login"; }}
+            onClick={async () => { await ApiClient.logout(); setUser(null); window.location.href = "/login"; }}
             className="px-3.5 py-1.5 rounded-xl border border-slate-700 text-slate-300 text-xs font-medium hover:bg-slate-800"
           >
             Sign out

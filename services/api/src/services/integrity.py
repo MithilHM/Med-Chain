@@ -21,6 +21,11 @@ def canonicalize_document(doc_dict: Dict[str, Any]) -> str:
 def generate_salt() -> str:
     return secrets.token_hex(32)
 
+def generate_record_hash(record_dict: dict) -> str:
+    """Generates a deterministic SHA-256 string for off-chain payloads."""
+    canonical_json = json.dumps(record_dict, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(canonical_json.encode('utf-8')).hexdigest()
+
 def compute_commitment(canonical_json: str, salt: str) -> str:
     hasher = hashlib.sha256()
     hasher.update((canonical_json + salt).encode('utf-8'))

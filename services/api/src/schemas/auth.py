@@ -11,8 +11,8 @@ class LoginRequest(BaseModel):
         return self.email or self.username or ""
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
     user: "UserOut"
 
 class UserOut(BaseModel):
@@ -23,6 +23,8 @@ class UserOut(BaseModel):
     patient_id: Optional[str] = None
     doctor_id: Optional[str] = None
     demo_mode: bool = False
+    mfa_enabled: bool = False
+    auth_source: str = "LOCAL"
 
     class Config:
         from_attributes = True

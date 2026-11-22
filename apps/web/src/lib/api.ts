@@ -1,5 +1,4 @@
 const API_BASE = "/api/v1";
-const TOKEN_KEY = "medchain_token";
 const USER_KEY = "medchain_user";
 
 function notifyUserContextChanged() {
@@ -16,6 +15,8 @@ export interface UserContext {
   demo_mode?: boolean;
   patient_id?: string | null;
   doctor_id?: string | null;
+  mfa_enabled?: boolean;
+  auth_source?: string;
 }
 
 export interface ApiError extends Error {
@@ -27,20 +28,17 @@ type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown };
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
+  // Authentication uses the HttpOnly session cookie only; JavaScript never holds a bearer token.
 
   if (options.body !== undefined) {
     headers.set("Content-Type", "application/json");
-  }
-
-  if (typeof window !== "undefined") {
-    const token = window.localStorage.getItem(TOKEN_KEY);
-    if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    credentials: "same-origin",
     cache: "no-store",
   });
 
@@ -72,26 +70,62 @@ function query(values: Record<string, string | number | boolean | undefined>): s
 }
 
 export const ApiClient = {
+  getAuthConfig: () =>
+    request<{ password_login: boolean; oidc_enabled: boolean; oidc_login_url: string | null; demo_mode: boolean }>("/auth/config"),
+
+  /** Password step. Returns either a signed-in user or an MFA challenge token. */
   async login(email: string, password: string) {
-    const result = await request<{ access_token: string; user: UserContext }>("/auth/login", {
+    const result = await request<{ user?: UserContext; mfa_required?: boolean; mfa_token?: string }>("/auth/login", {
       method: "POST",
       body: { email, password },
     });
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(TOKEN_KEY, result.access_token);
+    if (result.user && typeof window !== "undefined") {
       window.localStorage.setItem(USER_KEY, JSON.stringify(result.user));
       notifyUserContextChanged();
     }
     return result;
   },
 
+  async verifyMfa(mfaToken: string, code: string) {
+    const result = await request<{ user: UserContext }>("/auth/mfa/verify", {
+      method: "POST",
+      body: { mfa_token: mfaToken, code },
+    });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+      notifyUserContextChanged();
+    }
+    return result;
+  },
+
+  enrollMfa: () => request<{ secret: string; otpauth_uri: string }>("/auth/mfa/enroll", { method: "POST" }),
+  activateMfa: (code: string) =>
+    request<{ status: string; recovery_codes: string[] }>("/auth/mfa/activate", { method: "POST", body: { code } }),
+  disableMfa: (code: string) => request<any>("/auth/mfa/disable", { method: "POST", body: { code } }),
+  getMySessions: () => request<any[]>("/auth/sessions"),
+
+  getAlerts: (includeResolved = false) => request<any[]>(`/admin/alerts${query({ include_resolved: includeResolved })}`),
+  evaluateAlerts: () => request<any>("/admin/alerts/evaluate", { method: "POST" }),
+  getOutboxDelivery: (status?: string) => request<any>(`/admin/outbox/events${query({ status })}`),
+  getIntegrationStatus: () => request<any>("/integration/status"),
+  getInboundMessages: (status?: string) => request<any[]>(`/integration/messages${query({ status })}`),
+  reprocessInboundMessage: (id: string) =>
+    request<any>(`/integration/messages/${encodeURIComponent(id)}/reprocess`, { method: "POST" }),
+  getMergeRequests: (status = "PENDING") => request<any[]>(`/integration/merges${query({ status })}`),
+  decideMerge: (id: string, decision: "approve" | "reject", note?: string) =>
+    request<any>(`/integration/merges/${encodeURIComponent(id)}/${decision}`, { method: "POST", body: { note } }),
+  getBreakGlassGrants: (reviewStatus = "PENDING_REVIEW") =>
+    request<any[]>(`/admin/break-glass${query({ review_status: reviewStatus })}`),
+  reviewBreakGlass: (id: string, outcome: "APPROPRIATE" | "INAPPROPRIATE", note?: string) =>
+    request<any>(`/admin/break-glass/${encodeURIComponent(id)}/review`, { method: "POST", body: { outcome, note } }),
+  getEncryptionStatus: () => request<any>("/admin/encryption/status"),
+
   async demoSwitch(role: string) {
-    const result = await request<{ access_token: string; user: UserContext }>(
+    const result = await request<{ user: UserContext; access_token?: string }>(
       `/auth/demo-switch${query({ role })}`,
       { method: "POST" },
     );
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(TOKEN_KEY, result.access_token);
       window.localStorage.setItem(USER_KEY, JSON.stringify(result.user));
       notifyUserContextChanged();
     }
@@ -102,22 +136,46 @@ export const ApiClient = {
     return request<UserContext>("/auth/me");
   },
 
-  logout() {
+  clearLocalUser() {
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem(TOKEN_KEY);
+      window.localStorage.removeItem("medchain_token"); // legacy value from older builds
       window.localStorage.removeItem(USER_KEY);
       notifyUserContextChanged();
     }
   },
 
-  getSystemHealth: () => request<any>("/admin/health"),
+  async logout() {
+    try {
+      await request<void>("/auth/logout", { method: "POST" });
+    } catch {
+      // Clear browser state even if the API is temporarily unavailable.
+    } finally {
+      ApiClient.clearLocalUser();
+    }
+  },
+
+  getSystemHealth: () => request<any>("/health"),
+  getAdminHealth: () => request<any>("/admin/health"),
   getDbmsShowcaseQueries: () => request<any[]>("/admin/dbms/showcase"),
   runDbmsShowcaseQuery: (queryId: string) =>
     request<any>(`/admin/dbms/showcase/${encodeURIComponent(queryId)}`),
+
   getPatients: () => request<any[]>("/patients"),
   getPatient: (patientId: string) => request<any>(`/patients/${encodeURIComponent(patientId)}`),
   getPatientTimeline: (patientId: string) =>
     request<any>(`/patients/${encodeURIComponent(patientId)}/timeline`),
+
+  registerPatient: (payload: { display_code: string; date_of_birth: string; sex: string }) =>
+    request<any>("/patients", { method: "POST", body: payload }),
+
+  breakGlassEmergency: (patientId: string, justification: string) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}/break-glass`, {
+      method: "POST",
+      body: { justification },
+    }),
+
+  createVisit: (payload: Record<string, any>) =>
+    request<any>("/visits", { method: "POST", body: payload }),
 
   getDocuments: (patientId?: string) =>
     request<any[]>(`/documents${query({ patient_id: patientId })}`),
@@ -132,6 +190,15 @@ export const ApiClient = {
     structured_extract?: Record<string, unknown>;
   }) => request<any>("/documents", { method: "POST", body: document }),
 
+  amendDocument: (
+    documentId: string,
+    payload: { amendment_text: string; reason: string; author_signature?: string }
+  ) =>
+    request<any>(`/documents/${encodeURIComponent(documentId)}/amend`, {
+      method: "POST",
+      body: payload,
+    }),
+
   getConsents: () => request<any[]>("/consents"),
   getAccessRequests: () => request<any[]>("/access-requests"),
   createAccessRequest: (input: {
@@ -143,7 +210,7 @@ export const ApiClient = {
   decideAccessRequest: (requestId: string, decision: "APPROVED" | "REJECTED", validDays = 30, approvedScopes?: string[]) =>
     request<any>(`/access-requests/${encodeURIComponent(requestId)}/decision`, {
       method: "POST",
-        body: { decision, valid_days: validDays, ...(approvedScopes ? { approved_scopes: approvedScopes } : {}) },
+      body: { decision, valid_days: validDays, ...(approvedScopes ? { approved_scopes: approvedScopes } : {}) },
     }),
   revokeConsent: (consentId: string) =>
     request<any>(`/consents/${encodeURIComponent(consentId)}/revoke`, { method: "POST" }),
@@ -212,4 +279,25 @@ export const ApiClient = {
     request<any>(`/integrity/tamper-demo/${encodeURIComponent(documentId)}`, { method: "POST" }),
   getBlockchainStatus: () => request<any>("/blockchain/status"),
   resetDemo: () => request<any>("/admin/demo/reset", { method: "POST" }),
+
+  // HL7 FHIR Interoperability
+  getFhirMetadata: () => request<any>("/fhir/metadata"),
+  importFhirBundle: (bundle: Record<string, any>) =>
+    request<any>("/fhir/import", { method: "POST", body: bundle }),
+  exportPatientFhir: (patientId: string) =>
+    request<any>(`/fhir/patients/${encodeURIComponent(patientId)}/export`),
+
+  // Outbox Telemetry & Disaster Recovery
+  getOutboxEvents: async (limit = 50) =>
+    (await request<{ events: any[] }>(`/admin/outbox/events${query({ limit })}`)).events,
+  processOutbox: (limit = 20) => request<any>(`/admin/outbox/process${query({ limit })}`, { method: "POST" }),
+  retryFailedOutbox: () => request<any>("/admin/outbox/retry-failed", { method: "POST" }),
+  getHospitals: () => request<any[]>("/admin/hospitals"),
+  getDisasterRecovery: () => request<any>("/admin/disaster-recovery"),
+
+  // Workstation Sessions
+  listSessions: () => request<any[]>("/auth/sessions"),
+  revokeSession: (tokenJti: string) =>
+    request<any>("/auth/sessions/revoke", { method: "POST", body: { token_jti: tokenJti } }),
+  revokeAllSessions: () => request<any>("/auth/sessions/revoke-all", { method: "POST" }),
 };

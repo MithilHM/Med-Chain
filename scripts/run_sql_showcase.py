@@ -105,6 +105,28 @@ async def run_showcase():
         for row in res5.mappings():
             print(dict(row))
 
+        # 6. Insurance Analytics: Duplicate Claims Submitted Within 48 Hours (Blueprint 4.3)
+        print("\n--- 6. Insurance Analytics: Duplicate Claims on Same Visit Within 48 Hours ---")
+        q6 = text("""
+            SELECT 
+                c1.id AS claim_1,
+                c2.id AS claim_2,
+                c1.visit_id,
+                c1.claimed_amount,
+                c1.submitted_at AS submission_1,
+                c2.submitted_at AS submission_2
+            FROM insurance_claim c1
+            JOIN insurance_claim c2 ON c1.visit_id = c2.visit_id 
+                                     AND c1.id <> c2.id
+                                     AND c1.claimed_amount = c2.claimed_amount
+            WHERE datetime(c2.submitted_at) >= datetime(c1.submitted_at)
+              AND datetime(c2.submitted_at) <= datetime(c1.submitted_at, '+48 hours')
+            ORDER BY c1.submitted_at DESC;
+        """)
+        res6 = await db.execute(q6)
+        for row in res6.mappings():
+            print(dict(row))
+
     print("\n" + "=" * 70)
     print("   ALL SQL SHOWCASE QUERIES EXECUTED SUCCESSFULLY")
     print("=" * 70 + "\n")

@@ -17,6 +17,8 @@ import {
   ScrollText,
   ServerCog,
   Database,
+  Activity,
+  Lock,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -49,7 +51,9 @@ export default function Sidebar() {
     { label: "Record Integrity", href: "/integrity", icon: CheckSquare, roles: ["patient", "doctor", "admin"] },
     { label: "Audit & Ledger", href: "/audit", icon: ScrollText, roles: ["patient", "doctor", "admin"] },
     { label: "System Health", href: "/admin", icon: ServerCog, roles: ["admin"] },
+    { label: "Operations", href: "/admin/operations", icon: Activity, roles: ["admin"] },
     { label: "DBMS Showcase", href: "/admin/dbms", icon: Database, roles: ["admin"] },
+    { label: "Account Security", href: "/account/security", icon: Lock, roles: ["patient", "doctor", "researcher", "insurance_analyst", "admin"] },
   ];
   const visibleItems = navItems.filter((item) => role && item.roles.includes(role));
 
@@ -84,10 +88,10 @@ export default function Sidebar() {
       <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800/60 text-[11px] text-slate-400 space-y-1.5">
         <div className="flex items-center space-x-2 text-cyan-400 font-semibold">
           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
-          <span>Academic Capstone</span>
+          <span>Pilot build</span>
         </div>
         <p className="text-[10px] leading-relaxed text-slate-400">
-          Synthetic healthcare data only. Demonstrates ACID relational source, document store, graph projection & EVM audit trail.
+          Not approved for real patient data until the production-readiness gates are closed. Relational source of truth, encrypted documents, graph projection & EVM audit trail.
         </p>
       </div>
     </aside>

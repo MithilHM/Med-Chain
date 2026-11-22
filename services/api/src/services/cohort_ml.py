@@ -15,6 +15,27 @@ from src.services.privacy import MIN_RESEARCH_GROUP_SIZE
 
 logger = logging.getLogger("medchain.cohort_ml")
 
+def generate_patient_cohorts(patient_features_df: pd.DataFrame, n_clusters: int = 3):
+    """
+    Inputs a DataFrame containing patient clinical metrics:
+    ['age', 'visit_frequency', 'hba1c_level', 'sys_bp', 'claim_cost']
+    Outputs cluster assignments (Cohort IDs).
+    """
+    feature_cols = ['age', 'visit_frequency', 'hba1c_level', 'sys_bp', 'claim_cost']
+    available_cols = [c for c in feature_cols if c in patient_features_df.columns]
+    cols_to_use = available_cols if len(available_cols) > 0 else patient_features_df.select_dtypes(include=[np.number]).columns.tolist()
+    X = patient_features_df[cols_to_use].values
+    
+    # Standardize feature matrix
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Fit K-Means
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    patient_features_df['cohort_id'] = kmeans.fit_predict(X_scaled)
+    
+    return patient_features_df, kmeans.cluster_centers_
+
 class CohortMLService:
     @staticmethod
     async def run_clustering(

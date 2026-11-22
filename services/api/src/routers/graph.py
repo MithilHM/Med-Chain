@@ -20,7 +20,7 @@ from src.models import (
     Visit,
     Doctor,
 )
-from src.routers.deps import get_current_user, require_role
+from src.routers.deps import doctor_accessible_patient_ids, get_current_user, require_role
 
 router = APIRouter(prefix="/graph", tags=["Derived Graph Intelligence"])
 
@@ -36,8 +36,7 @@ async def _authorized_research_patient_ids(
         doctor = (await db.execute(select(Doctor).where(Doctor.user_id == current_user.id))).scalar_one_or_none()
         if not doctor:
             return set()
-        result = await db.execute(select(Visit.patient_id).where(Visit.doctor_id == doctor.id).distinct())
-        return set(result.scalars().all())
+        return await doctor_accessible_patient_ids(db, doctor, current_user)
     if current_user.role != "researcher":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -202,6 +201,7 @@ async def get_graph_overview(
         return await GraphSyncService.get_graph_data()
     disease_graph = await _consented_disease_graph(db, patient_ids)
     drug_graph = await _consented_drug_side_effect_graph(db, patient_ids)
+    await db.commit()  # releases consent locks held since authorization
     return {
         "nodes": disease_graph["nodes"] + drug_graph["nodes"],
         "edges": disease_graph["edges"] + drug_graph["edges"],
@@ -219,7 +219,9 @@ async def get_disease_cooccurrence(
     )
     if patient_ids is None:
         return await GraphSyncService.get_graph_data("disease_cooccurrence")
-    return await _consented_disease_graph(db, patient_ids)
+    result = await _consented_disease_graph(db, patient_ids)
+    await db.commit()
+    return result
 
 @router.get("/drug-side-effects", response_model=GraphDataOut)
 async def get_drug_side_effects(
@@ -232,7 +234,9 @@ async def get_drug_side_effects(
     )
     if patient_ids is None:
         return await GraphSyncService.get_graph_data("drug_side_effects")
-    return await _consented_drug_side_effect_graph(db, patient_ids)
+    result = await _consented_drug_side_effect_graph(db, patient_ids)
+    await db.commit()
+    return result
 
 @router.get("/treatments")
 async def get_condition_treatments(
@@ -267,16 +271,45 @@ async def get_condition_treatments(
         query = query.where(Visit.patient_id.in_(patient_ids))
 
     rows = (await db.execute(query)).mappings().all()
+    results = [
+        {
+            **dict(row),
+            "confidence_score": round(min(0.99, max(0.50, row["patient_count"] / 10.0)), 2),
+        }
+        for row in rows
+        if patient_ids is None or row["patient_count"] >= MIN_RESEARCH_GROUP_SIZE
+    ]
+    await db.commit()
     return {
-        "results": [
-            dict(row) for row in rows
-            if patient_ids is None or row["patient_count"] >= MIN_RESEARCH_GROUP_SIZE
-        ],
+        "results": results,
         "disclaimer": "Relationships are co-occurrences in synthetic visit records, not prescribing guidance or evidence of causation.",
+    }
+
+@router.get("/path-query")
+async def get_side_effect_profiles(
+    disease_code: str = "E11",
+    current_user: AppUser = Depends(require_role(["doctor", "admin"]))
+):
+    """
+    Executes multi-hop traversal to identify side-effect profiles for patients treated for specific diseases:
+    (:Patient)-[:DIAGNOSED_WITH]->(:Disease) -> (:Medication) -> (:SideEffect)
+
+    This traverses the whole projection (not consent-scoped), so it is limited to clinical roles
+    for pharmacovigilance and small groups are suppressed. Researchers use the consent-scoped
+    /graph/drug-side-effects endpoint instead.
+    """
+    profiles = [
+        profile for profile in await GraphSyncService.find_side_effect_profiles(disease_code)
+        if (profile.get("patient_count") or 0) >= MIN_RESEARCH_GROUP_SIZE
+    ]
+    return {
+        "disease_code": disease_code,
+        "results": profiles,
+        "disclaimer": "Multi-hop graph traversal represents synthetic observed associations, not proven pharmacological causation."
     }
 
 @router.get("/status", response_model=GraphSyncStatusOut)
 async def get_graph_status(current_user: AppUser = Depends(require_role(["doctor", "admin"]))):
-    status_info = GraphSyncService.get_status()
-    return status_info
+    return await GraphSyncService.get_status_async()
+
 

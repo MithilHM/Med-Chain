@@ -362,7 +362,7 @@ async def resolve_anomaly(
     policy = await _require_claim_provider_scope(claim, current_user, db)
     status_val = body.resolution_status
     notes = body.notes.strip()
-    claim.status = status_val
+    claim.status = "REJECTED" if status_val in ("REJECTED", "CONFIRMED_FRAUD") else status_val
     claim.approved_amount = claim.claimed_amount if status_val == "APPROVED" else Decimal("0.00")
     claim.review_flag = False
     claim.review_reason = f"Adjudicated ({status_val}): {notes}"

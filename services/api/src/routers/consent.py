@@ -10,7 +10,8 @@ from src.models import (
 from src.schemas.consent import (
     AccessRequestCreate, AccessRequestDecision, AccessRequestOut, ConsentOut
 )
-from src.services.blockchain import BlockchainService
+from src.services.events import ClinicalEvent, EventBus
+from src.services.outbox import OutboxService
 from src.routers.deps import get_current_user, require_role
 
 router = APIRouter(prefix="", tags=["Research Projects & Patient Consent"])
@@ -209,11 +210,14 @@ async def decide_access_request(
         db.add(consent)
         await db.flush()
 
-        # Emit on-chain event (or unanchored mode)
-        chain_status, tx_hash, block_num = await BlockchainService.record_consent_granted(
-            consent.id, consent.patient_id, consent.requester_project_id, int(valid_until.timestamp())
-        )
-        consent.chain_tx_hash = tx_hash if chain_status == "CONFIRMED" else None
+        # Chain evidence commits atomically with the consent row and is delivered by the outbox worker.
+        await OutboxService.enqueue(db, "BLOCKCHAIN_CONSENT_GRANTED", consent.id, {
+            "consent_id": consent.id,
+            "patient_id": consent.patient_id,
+            "project_id": consent.requester_project_id,
+            "valid_until_ts": int(valid_until.timestamp()),
+        })
+        chain_status = "QUEUED"
         created_consent = consent
 
     await db.commit()
@@ -272,33 +276,45 @@ async def revoke_consent(
     if not consent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consent record not found.")
 
+    if current_user.role == "patient":
+        pt = (await db.execute(select(Patient).where(Patient.user_id == current_user.id))).scalar_one_or_none()
+        if not pt or pt.id != consent.patient_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot revoke another patient's consent.")
+
+    if consent.status == "REVOKED":
+        return {
+            "status": "REVOKED",
+            "consent_id": consent.id,
+            "revoked_at": consent.revoked_at,
+            "chain_tx_hash": consent.chain_tx_hash,
+            "chain_status": "ALREADY_REVOKED",
+        }
+
     if consent.status != "GRANTED" or consent.revoked_at is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Consent is no longer active.",
         )
 
-    if current_user.role == "patient":
-        pt = (await db.execute(select(Patient).where(Patient.user_id == current_user.id))).scalar_one_or_none()
-        if not pt or pt.id != consent.patient_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot revoke another patient's consent.")
-
     now = datetime.now(timezone.utc)
     consent.status = "REVOKED"
     consent.revoked_at = now
 
-    # Emit on-chain revocation event
-    chain_status, tx_hash, block_num = await BlockchainService.record_consent_revoked(
-        consent.id, consent.patient_id
-    )
-    if chain_status == "CONFIRMED":
-        consent.chain_tx_hash = tx_hash
-
+    # The database revocation is authoritative and immediate; chain evidence follows via the outbox.
+    await OutboxService.enqueue(db, "BLOCKCHAIN_CONSENT_REVOKED", consent.id, {
+        "consent_id": consent.id,
+        "patient_id": consent.patient_id,
+    })
     await db.commit()
+    EventBus.publish(ClinicalEvent(
+        "consent.revoked",
+        patient_id=consent.patient_id,
+        data={"consent_id": consent.id, "project_id": consent.requester_project_id},
+    ))
     return {
         "status": "REVOKED",
         "consent_id": consent.id,
         "revoked_at": consent.revoked_at,
-        "chain_tx_hash": tx_hash if chain_status == "CONFIRMED" else None,
-        "chain_status": chain_status,
+        "chain_tx_hash": None,
+        "chain_status": "QUEUED",
     }

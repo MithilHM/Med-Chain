@@ -14,12 +14,14 @@ from src.services.auth import hash_password
 from src.services.mongo import MongoDocumentService
 from src.services.integrity import IntegrityService
 from src.services.neo4j_sync import GraphSyncService
+from src.services.outbox import OutboxService
+from sqlalchemy import select
 from src.models import (
     AppUser, Hospital, Doctor, Patient, ResearchOrganization, ResearchProject,
     Disease, Medication, SideEffect, LabTest, Visit, Diagnosis, Prescription,
     Treatment, LabResult, ObservedAdverseEvent, MedicalDocument, RecordIntegrity,
     InsuranceProvider, InsuranceAnalyst, InsurancePolicy, InsuranceClaim, ClaimItem,
-    Consent, AccessRequest
+    Consent, AccessRequest, PatientIdentifier
 )
 
 async def seed():
@@ -47,8 +49,8 @@ async def seed():
         await db.flush()
 
         # Hospitals
-        hosp1 = Hospital(name="Metropolitan Academic Medical Center", region="North Central")
-        hosp2 = Hospital(name="St. Jude Research Hospital", region="Downtown Metro")
+        hosp1 = Hospital(name="Metropolitan Academic Medical Center", region="North Central", facility_code="MAMC")
+        hosp2 = Hospital(name="St. Jude Research Hospital", region="Downtown Metro", facility_code="SJRH")
         db.add_all([hosp1, hosp2])
         await db.flush()
 
@@ -57,7 +59,8 @@ async def seed():
             user_id=doctor_user.id,
             hospital_id=hosp1.id,
             display_name="Dr. Sarah Chen, MD",
-            specialty="Cardiovascular & Metabolic Medicine"
+            specialty="Cardiovascular & Metabolic Medicine",
+            external_provider_id="PRV-1001",
         )
         db.add(doc1)
         await db.flush()
@@ -83,6 +86,15 @@ async def seed():
             )
             synthetic_patients.append(pt)
             db.add(pt)
+        await db.flush()
+
+        # MRNs issued by the demo hospital's assigning authority (used by HL7/FHIR patient matching)
+        for pt in [demo_patient, *synthetic_patients]:
+            db.add(PatientIdentifier(patient_id=pt.id, system="MAMC", value=pt.display_code, identifier_type="MR"))
+        # Obviously synthetic names (encrypted at rest; shown only to care roles).
+        demo_patient.set_name("Alex", "Demo")
+        for index, pt in enumerate(synthetic_patients, start=1):
+            pt.set_name(f"Synthetic{index}", "Testpatient")
         await db.flush()
 
         # Research Organization & Projects
@@ -246,10 +258,10 @@ async def seed():
             commitment_hash=commitment_hash,
             algorithm="SHA256_SALTED",
             salt=salt,
-            verified_at=now_dt,
-            verification_status="VERIFIED_MATCH"
+            verification_status="UNVERIFIED"
         )
         db.add(rec_integrity)
+        await OutboxService.enqueue_record_anchor(db, med_doc.id, commitment_hash, 1)
 
         # Seed encounters for remaining synthetic patients
         for idx, pt in enumerate(synthetic_patients):
@@ -400,8 +412,8 @@ async def seed():
         )
         db.add(consent1)
 
-        # Also add consents for several synthetic patients to enable rich aggregate research queries
-        for pt in synthetic_patients[:10]:
+        # Also add consents for all synthetic patients to enable rich aggregate research queries
+        for pt in synthetic_patients:
             c = Consent(
                 patient_id=pt.id,
                 requester_project_id=proj1.id,
@@ -415,6 +427,18 @@ async def seed():
                 chain_tx_hash=None
             )
             db.add(c)
+        await db.flush()
+
+        # Queue chain evidence for seeded consents exactly like API-created ones, so a later
+        # revocation finds the grant on-chain once the outbox worker has delivered it.
+        seeded_consents = (await db.execute(select(Consent))).scalars().all()
+        for consent in seeded_consents:
+            await OutboxService.enqueue(db, "BLOCKCHAIN_CONSENT_GRANTED", consent.id, {
+                "consent_id": consent.id,
+                "patient_id": consent.patient_id,
+                "project_id": consent.requester_project_id,
+                "valid_until_ts": int(consent.valid_until.timestamp()),
+            })
 
         await db.commit()
         print("[Seed] Relational and document seed completed.")

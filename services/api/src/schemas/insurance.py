@@ -49,7 +49,7 @@ class ClaimReviewRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 class AnomalyResolutionRequest(BaseModel):
-    resolution_status: Literal["APPROVED", "REJECTED"]
+    resolution_status: Literal["APPROVED", "REJECTED", "CONFIRMED_FRAUD"]
     notes: str = Field(default="", max_length=2000)
 
 class PolicyOut(BaseModel):

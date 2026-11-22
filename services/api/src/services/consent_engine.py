@@ -6,11 +6,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models import (
     AppUser, ResearchProject, Consent, AccessEvent, Patient
 )
-from src.services.blockchain import BlockchainService
+from src.request_context import current_request_id
+from src.services.outbox import OutboxService
 
 logger = logging.getLogger("medchain.consent_engine")
 
 class ConsentPolicyEngine:
+    """Deny-by-default research authorization.
+
+    Concurrency contract (closes the revoke-during-query race):
+    - On GRANTED, the matching consent rows are read with FOR SHARE and the transaction is left
+      OPEN. The caller must run its data query in the same session and then commit.
+    - Revocation reads the consent row FOR UPDATE, so it blocks until in-flight authorized queries
+      commit, and any query that starts afterwards sees the revocation.
+    - On DENIED, the decision is committed immediately so it survives the 403 response.
+    SQLite (development only) ignores row locks; PostgreSQL enforces them.
+    """
+
     @staticmethod
     def _consent_is_current(consent: Consent, now: datetime) -> tuple[bool, str]:
         valid_from = consent.valid_from
@@ -92,7 +104,7 @@ class ConsentPolicyEngine:
                     Consent.requester_project_id == project_id,
                     Consent.status == "GRANTED",
                     Consent.revoked_at.is_(None),
-                )
+                ).with_for_update(read=True)
             )).scalars().all()
 
             if not patient_consents:
@@ -144,7 +156,7 @@ class ConsentPolicyEngine:
                 Consent.requester_project_id == project_id,
                 Consent.status == "GRANTED",
                 Consent.revoked_at.is_(None)
-            )
+            ).with_for_update(read=True)
         )).scalars().all()
 
         valid_consents = []
@@ -185,18 +197,12 @@ class ConsentPolicyEngine:
             resource_reference=resource_ref,
             action=action,
             decision=decision,
-            reason_code=reason
+            reason_code=reason[:100],
+            request_id=current_request_id(),
         )
         db.add(event)
-        await db.commit()
-
-        # Try to mirror access log to blockchain (asynchronously, with unanchored fallback)
-        try:
-            status, tx_hash = await BlockchainService.log_access_event(
-                event.id, actor_id, resource_ref, action, decision
-            )
-            if status == "CONFIRMED":
-                event.chain_tx_hash = tx_hash
-                await db.commit()
-        except Exception as e:
-            logger.warning(f"Failed to anchor access event to blockchain: {e}")
+        await db.flush()
+        await OutboxService.enqueue_access_event(db, event)
+        if decision == "DENIED":
+            await db.commit()
+        # GRANTED: keep the transaction (and FOR SHARE consent locks) open for the caller's query.

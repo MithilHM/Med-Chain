@@ -1,13 +1,8 @@
 # MedChain: Privacy-Preserving Healthcare Intelligence & Multi-Model Audit Platform
 
-[![E2E Verification](https://img.shields.io/badge/E2E%20Tests-11%20Passed-brightgreen)](services/api/tests)
-[![Smart Contracts](https://img.shields.io/badge/Solidity%20Contracts-8%20Passed-blue)](contracts/test)
-[![Frontend Build](https://img.shields.io/badge/Next.js%2014-Compiled%20%E2%9C%93-success)](apps/web)
-[![DBMS Showcase](https://img.shields.io/badge/SQL%20Showcase-3NF%20%2B%20CTE%20%2B%20Window%20Functions-orange)](docs/DBMS_SHOWCASE.md)
+**MedChain** is a healthcare data platform prototype for consent-managed records, real-time clinical integration, research analytics, and tamper-evident audit events. It is a single-organization system tested with synthetic data; it is not yet approved to store or process real patient records.
 
-**MedChain** is an educational privacy-preserving healthcare data intelligence demonstration. It explores a **hybrid multi-store architecture** integrating relational records, semi-structured clinical documents, derived graph analytics, unsupervised cohort discovery, and an Ethereum/Hardhat cryptographic commitment layer.
-
-> MedChain is an educational demonstration using synthetic data. It is not a clinical system and is not certified for regulated health data.
+> **Deployment status:** the code-level controls for a single-hospital pilot are implemented and tested: real-time HL7 v2 ingestion, hospital SSO/SCIM/MFA, durable audit delivery, approval-gated merges, alerting, and key rotation. What remains needs the hospital itself: identity-provider registration, interface validation on its test feed, a permissioned ledger network, infrastructure hardening, and institutional approval. Connect only to a hospital *test* environment until every gate in [Production Readiness](docs/PRODUCTION_READINESS.md) is closed. Operators should start with the [Operations Runbook](docs/OPERATIONS.md).
 
 See the [change checklist](docs/CHANGE_CHECKLIST.md) for completed changes and remaining essential work.
 See the [review backlog](docs/REVIEW_BACKLOG.md) for confirmed security/reliability gaps and optional improvements.
@@ -59,7 +54,13 @@ MedChain addresses the tension between clinical data usability, institutional pr
 
 ## Key Features
 
-- **Centralized Deny-by-Default Consent Engine:** Gated research access control enforcing patient consent scopes (`aggregate_diagnoses`, `medication_history`, `lab_summaries`). Immediate real-time revocation enforcement with zero server restart or cache invalidation delays.
+- **Real-time Clinical Integration:** HL7 v2 `ADT^A01/A04/A08/A03` and `ORU^R01` over MLLP (TLS/mTLS) or HTTPS, with an encrypted idempotent message ledger, identifier-only patient matching, a manual review queue, and HL7 ACKs. See [Integration](docs/INTEGRATION.md).
+- **Live Clinical Feed:** Server-Sent Events push admissions, results (with abnormal/critical flags), and alerts to the care team, filtered per patient and closed when the session ends.
+- **Durable Audit Evidence:** Consent, access, document, and inbound-message evidence is written to a transactional outbox with the authoritative change and delivered to the chain with retries and idempotent checks; on-chain references are keyed HMAC pseudonyms.
+- **Clinical Access Model:** Care-team assignments from ADT/FHIR/onboarding that end after discharge, time-boxed break-the-glass grants with compliance review, encrypted patient names visible only to care roles, and approval-gated duplicate-record merges.
+- **Hospital Identity:** OIDC single sign-on with directory-group roles, SCIM deprovisioning, TOTP MFA with recovery codes, fail-closed sessions, lockout, and a database-backed rate limit.
+- **Operations:** Prometheus `/metrics`, webhook alerting, an admin Operations console, encryption key rotation, an atomic graph rebuild, and PostgreSQL `LISTEN/NOTIFY` event fan-out across replicas.
+- **Centralized Deny-by-Default Consent Engine:** Research authorization checks enforce patient consent scopes (`aggregate_diagnoses`, `medication_history`, `lab_summaries`). Authorized queries hold consent row locks, so revocation is serialized with in-flight queries.
 - **Cryptographic Record Integrity:** Deterministic sorted-key compact JSON and salted SHA-256 hashing, checked against the on-chain commitment when the chain is available.
 - **Advanced DBMS Engineering:** Relational schema documentation, a command-line SQL showcase, and an admin-only web explorer for fixed joins, CTEs, window aggregates, and an indexed lookup plan. Aggregate results hide groups with fewer than five patients.
 - **Explainable Insurance Fraud Heuristics:** Automated anomaly flagging for overlapping visits, 48-hour duplicate billing, and unbundling, paired with human-in-the-loop analyst adjudication.
@@ -79,8 +80,8 @@ MEDCHAIN/
 │       ├── src/components/    # Glassmorphic UI components, Navbar, Role switcher
 │       └── src/lib/api.ts     # Typed API client connecting to backend
 ├── contracts/
-│   ├── contracts/             # MedChainAudit.sol Solidity smart contract
-│   ├── test/                  # Hardhat contract test suite (8 tests)
+│   ├── contracts/             # MedChainAudit.sol (deployed); MedChainTrustLayer.sol (deprecated sketch, not deployed)
+│   ├── test/                  # Hardhat contract test suite
 │   └── scripts/               # Contract deployment scripts
 ├── docs/
 │   ├── ARCHITECTURE.md        # System architecture, privacy model & source-of-truth rules
@@ -102,10 +103,12 @@ MEDCHAIN/
         │   ├── main.py        # Application entrypoint & route registration
         │   ├── database.py    # SQLAlchemy async engine & fallback logic
         │   ├── models/        # 30 SQLAlchemy relational models
-        │   ├── routers/       # 13 REST API routers under /api/v1
+        │   ├── routers/       # REST API routers under /api/v1 (incl. integration, events)
+        │   ├── integration/   # HL7 v2 parser, message processor, MLLP listener
         │   ├── schemas/       # Pydantic v2 validation schemas
-        │   └── services/      # Business logic: Consent, Integrity, ML, Anomaly, Graph
-        └── tests/             # Pytest integration and E2E scenario suite (11 tests)
+        │   └── services/      # Consent, outbox, chain, matching, events, integrity, ML, graph
+        ├── alembic/versions/  # 001 baseline (generated from models), 002 integration schema
+        └── tests/             # Pytest integration, HL7, access-control, and E2E scenario suite
 ```
 
 ---
@@ -152,7 +155,7 @@ cd contracts
 npm install
 npm test
 ```
-*Expected output: All 8 contract tests passing.*
+*Expected output: all contract tests passing.*
 
 ---
 
@@ -199,7 +202,21 @@ npm run dev
 cd services/api
 .venv\Scripts\pytest -v
 ```
-*Runs all 11 test suites including `test_e2e_prd_scenario.py` verifying the full 12-step narrative.*
+*Runs the full suite, including `test_e2e_prd_scenario.py` (12-step narrative) and `test_realtime_integration.py` (HL7 ingestion, review queue, event authorization, outbox semantics).*
+
+### Database migrations
+```bash
+cd services/api
+alembic upgrade head      # required before non-development startup
+```
+CI also runs the migrations on PostgreSQL and fails if they drift from the models.
+
+### Real-time HL7 listener
+```bash
+cd services/api
+python -m src.integration.mllp_server   # or: docker compose -f infra/docker-compose.yml --profile integration up -d
+```
+See [docs/INTEGRATION.md](docs/INTEGRATION.md) for message types, field mapping, ACK semantics, and integration keys.
 
 ### Advanced SQL & DBMS Showcase
 ```bash
@@ -213,7 +230,7 @@ cd services/api
 cd apps/web
 npm run build
 ```
-*Verifies 0 TypeScript errors and generates all 14 static route pages.*
+*Verifies there are no TypeScript errors and generates the static route pages.*
 
 ---
 
@@ -224,7 +241,7 @@ All seeded demo accounts share the password: **`Password123!`**
 | Persona | Email / Login | Role | Demonstrates |
 | :--- | :--- | :--- | :--- |
 | **System Admin** | `admin@medchain.local` | `admin` | Infrastructure health, graph rebuild, store reset |
-| **Primary Patient** | `patient@medchain.local` | `patient` | Access request approval, real-time revocation |
+| **Primary Patient** | `patient@medchain.local` | `patient` | Access request approval, consent revocation |
 | **Attending Doctor**| `doctor@medchain.local` | `doctor` | Longitudinal encounter timeline, note entry |
 | **Research Scientist**| `researcher@medchain.local`| `researcher`| Consent-gated queries, K-Means cohorting |
 | **Insurance Analyst**| `analyst@medchain.local` | `insurance_analyst`| Transactional claim rollback, fraud queue |
@@ -236,17 +253,18 @@ In local demo mode, the header role switcher can change demo personas. Regular a
 ## Detailed Documentation Links
 
 - [System Architecture & Privacy Model](docs/ARCHITECTURE.md)
+- [Real-time Clinical Integration (HL7 v2 / FHIR)](docs/INTEGRATION.md)
+- [Operations Runbook (SSO, alerts, key rotation, ledger)](docs/OPERATIONS.md)
 - [Implementation Plan & Phase Roadmap](docs/IMPLEMENTATION_PLAN.md)
 - [Complete Entity-Relationship Schema (ERD)](docs/ERD.md)
 - [API Reference & OpenAPI Specifications](docs/API.md)
 - [Cryptographic Security & Threat Model](docs/SECURITY_AND_PRIVACY.md)
+- [Hospital Production Readiness Gates](docs/PRODUCTION_READINESS.md)
 - [DBMS Normalization & Query Optimization Showcase](docs/DBMS_SHOWCASE.md)
 - [12-Step Evaluation Demonstration Script](docs/DEMO_SCRIPT.md)
 
 ---
 
-## Compliance & Privacy Standards
+## Privacy Design Scope
 
-- **HIPAA Minimum Necessary Standard:** Direct identifiers are stripped from research queries. Only consented, de-identified aggregate vectors are accessible.
-- **GDPR Article 17 (Right to Erasure / Revocation):** When a patient revokes consent, access is cut off immediately at the centralized policy engine.
-- **Off-Chain Confidentiality:** No PHI, names, or cleartext notes are ever committed to the blockchain. All ledger anchors consist of salted SHA-256 cryptographic commitments.
+The prototype demonstrates selected privacy controls: scoped consent checks, aggregate suppression, encrypted document payloads, role checks, and off-chain medical records with on-chain commitments. These controls do not establish HIPAA or GDPR compliance. Institutional policy mapping, threat assessment, operational controls, and independent review are required before any regulated deployment. Revocation waits for in-flight authorized queries (PostgreSQL row locks) and blocks every later check; exports already downloaded cannot be recalled.

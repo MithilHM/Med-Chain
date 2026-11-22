@@ -97,7 +97,7 @@ export default function InsurancePage() {
             item_code: itemCode,
             description: itemDesc,
             quantity: Number(itemQty),
-            unit_cost: itemCost,
+            unit_cost: Number(itemCost) || 0,
           },
         ],
       });

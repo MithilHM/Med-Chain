@@ -5,9 +5,10 @@ MedChain is an enterprise-grade academic demonstration platform designed to show
 
 ### Key Architectural Principles:
 1. **Clear Source-of-Truth Hierarchy:** Relational data in PostgreSQL is authoritative. Document and graph stores are specialized functional projections.
-2. **Off-Chain Clinical Records:** Raw patient identifiers, clinical text, and diagnosis details stay off-chain. Blockchain calls use opaque hashes of internal references and salted document commitments; those hashes should still be treated as sensitive metadata.
+2. **Off-Chain Clinical Records:** Raw patient identifiers, clinical text, and diagnosis details stay off-chain. On-chain references are keyed pseudonyms (HMAC-SHA256 with `CHAIN_PSEUDONYM_KEY`), so holding an internal UUID is not enough to find its on-chain events; document commitments are salted. Treat the pseudonyms as sensitive metadata and keep the key stable and backed up.
 3. **Defense-in-Depth Authorization:** Hiding a UI button is not security. Every request is independently authorized by a central policy engine verifying actor role, explicit ownership, active patient consent, and expiration timestamps.
-4. **Explicit Store Degradation:** Development and test can use encrypted local document and in-memory graph fallbacks. Production document operations require MongoDB. Blockchain writes are best-effort inline calls, and graph data is rebuilt by an admin action; a transactional outbox worker is not yet implemented.
+4. **Explicit Store Degradation:** Development and test can use encrypted local document and in-memory graph fallbacks. Production document operations require MongoDB and return HTTP 503 when it is unavailable. Blockchain evidence is written to a transactional outbox in the same database transaction as the authoritative change and delivered by a background worker with retries; graph data is rebuilt by an admin action.
+5. **Conservative Clinical Ingestion:** Real-time HL7 v2 and FHIR feeds match patients only on exact assigning-authority identifiers. Conflicts, unknown providers, and unknown facilities go to a human review queue; demographics and timestamps are never invented.
 
 ---
 
@@ -26,7 +27,7 @@ MedChain is an enterprise-grade academic demonstration platform designed to show
                  |                                                         |
                  |  +--------------------+  +---------------------------+  |
                  |  | Security & Auth    |  | Consent Policy Engine     |  |
-                 |  | (Argon2 / JWT)     |  | (Deny-by-default rules)   |  |
+                 |  | (bcrypt / JWT)     |  | (Deny-by-default rules)   |  |
                  |  +--------------------+  +---------------------------+  |
                  |  | Audit Interceptor  |  | Outbox Dispatcher         |  |
                  |  +--------------------+  +---------------------------+  |
@@ -63,12 +64,48 @@ MedChain is an enterprise-grade academic demonstration platform designed to show
 - A relational metadata record is created in PostgreSQL's `medical_document` table containing `patient_id`, `visit_id`, `document_type`, and `mongo_document_id`.
 - Simultaneously, a canonical deterministic JSON serialization of the document is generated:
   $$\text{Commitment} = \text{SHA256}(\text{CanonicalJSON} + \text{OffChainSalt})$$
-- The commitment hash is recorded in PostgreSQL's `record_integrity` table, then submitted to the blockchain inline on a best-effort basis. The result is recorded as confirmed, failed, or unanchored.
+- The commitment hash is recorded in PostgreSQL's `record_integrity` table together with a `PENDING` `blockchain_event` row and an outbox event, all in one transaction. The outbox worker anchors it and marks the row `CONFIRMED` with its transaction hash.
+- Amendments create a new version: the prior payload is preserved as an immutable encrypted snapshot, and the new commitment is anchored with a higher version number. The contract rejects equal or lower versions, so anchored history cannot be overwritten or rolled back.
 
-### 4.2 Cross-Store Synchronization Status
-- The schema includes an `outbox_event` table, but current routes do not write to it and no outbox processor runs. It does not yet provide retry or eventual-delivery guarantees.
-- Consent and access events are submitted to Hardhat inline, with database state remaining authoritative. Blockchain outages therefore leave events unanchored or failed until a retry mechanism is implemented.
+### 4.2 Transactional Outbox (cross-store delivery)
+- Producers (consent grant/revoke, access decisions, document commitments, inbound-message provenance) call `OutboxService.enqueue` inside the transaction that changes authoritative state. If that transaction rolls back, no evidence is emitted; if it commits, the evidence is never lost.
+- `OutboxWorker` runs in the API process (`OUTBOX_WORKER_ENABLED`). It claims due events with `SELECT ... FOR UPDATE SKIP LOCKED`, releases claims left by crashed workers, retries with exponential backoff (5 s up to 1 h), and marks events `FAILED` after `OUTBOX_MAX_RETRIES` or on a permanent contract rejection. On PostgreSQL an advisory lock makes one replica the single chain sender, so nonces never collide.
+- Dispatch is idempotent: before sending, the worker reads on-chain state (existing commitment/version, consent status). Re-delivery of an already-applied event is a no-op success. A revocation whose grant is not yet anchored waits for it.
+- Operators see counts, the oldest undelivered event, and per-event errors at `GET /admin/outbox/events`, and can requeue failures with `POST /admin/outbox/retry-failed`.
 - Neo4j is rebuilt from relational records by an admin endpoint. There is no automatic graph projection after each relational change.
+
+### 4.2a Consent Revocation Serialization
+- A granted research authorization reads the consent rows `FOR SHARE` and keeps the transaction open while the protected query runs; the router commits afterwards.
+- Revocation reads the consent row `FOR UPDATE`, so it waits for in-flight authorized queries to finish, and every query that starts afterwards sees the revocation. (SQLite, used only for development, ignores row locks.)
+
+### 4.2b Real-time Clinical Integration
+```
+Hospital ADT / LIS ──► Interface engine (Mirth, Rhapsody, Cloverleaf)
+                          │  HL7 v2 over MLLP (TLS/mTLS)  or  HTTPS + X-Integration-Key
+                          ▼
+               MLLP listener / POST /integration/hl7v2
+                          │  inbound_message ledger (encrypted raw, unique per source + MSH-10)
+                          ▼
+               Patient matching ──(conflict / unknown provider)──► NEEDS_REVIEW queue
+                          │
+                          ▼
+        Visits, care-team assignments, lab results  ──► outbox: provenance anchor
+                          │ (after commit)
+                          ▼
+               Event bus ──► GET /events/stream (SSE) ──► care-team dashboards
+```
+- Supported: `ADT^A01/A04/A08/A03`, `ORU^R01` (numeric results). See [INTEGRATION.md](INTEGRATION.md).
+- Real-time events carry identifiers and flags only (for example `critical: true` for HH/LL results). Subscribers receive only events for patients they may access; the stream re-checks the session every 30 seconds and closes when it is revoked or expires.
+- On PostgreSQL, every process (API replicas and the MLLP listener) publishes with `NOTIFY` and receives with `LISTEN`, so results ingested anywhere reach dashboards on every replica. While the relay connection is down, delivery falls back to in-process.
+
+### 4.2c Identity and Operations
+- Staff authenticate through hospital OIDC SSO; SCIM keeps accounts in step with the directory. Local accounts (patients, break-glass admin) use passwords plus TOTP.
+- A monitor evaluates outbox, integration, compliance, and store health, records alert transitions in `operational_alert`, and posts them to a webhook. `/metrics` exposes the same counts to Prometheus. On PostgreSQL an advisory lock makes one replica evaluate and notify.
+- Encryption uses a key ring with key IDs in every ciphertext; rotation re-encrypts documents, raw HL7, names, and MFA secrets.
+
+### 4.3a Graph Rebuild Safety
+- Each rebuild writes a complete new generation beside the live one, then one write transaction points `ProjectionMeta` at it and removes older generations. Readers filter by the current generation, so a failed rebuild is invisible and the previous projection stays live.
+- Patient nodes carry a keyed pseudonym and sex only.
 
 ### 4.3 Graph Synchronization Engine
 - Neo4j projections represent aggregate disease-drug-side-effect relationships.

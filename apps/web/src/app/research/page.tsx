@@ -233,7 +233,7 @@ export default function ResearchPage() {
             {queryError}
           </p>
           <div className="text-[11px] text-slate-400 pt-1">
-            This demonstrates server-side policy enforcement: if the patient has revoked consent or if no active consent exists, data retrieval is completely blocked and logged to the immutable audit trail.
+            Server-side policy checks reject queries without active consent and record the decision in the database audit log. Blockchain mirroring is best-effort, and work already in progress is not cancelled by a later revocation.
           </div>
         </div>
       )}
