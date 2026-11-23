@@ -102,19 +102,24 @@ async def seed():
         db.add(res_org)
         await db.flush()
 
+        # Explicit creation times keep list order deterministic on every OS (clock resolution differs):
+        # the consented project is the most recent, so it is listed (and pre-selected in the UI) first.
+        seeded_at = datetime.now(timezone.utc)
         proj1 = ResearchProject(
             organization_id=res_org.id,
             title="Type 2 Diabetes & Vascular Outcomes Longitudinal Analysis",
             purpose="Evaluate longitudinal metabolic markers and drug associations across de-identified synthetic patient cohorts.",
             status="ACTIVE",
-            created_by=researcher_user.id
+            created_by=researcher_user.id,
+            created_at=seeded_at,
         )
         proj2 = ResearchProject(
             organization_id=res_org.id,
             title="Antihypertensive Drug Exposure & Adverse Event Surveillance",
             purpose="Analyze reported adverse symptom associations and lab variability.",
             status="ACTIVE",
-            created_by=researcher_user.id
+            created_by=researcher_user.id,
+            created_at=seeded_at - timedelta(days=1),
         )
         db.add_all([proj1, proj2])
         await db.flush()
