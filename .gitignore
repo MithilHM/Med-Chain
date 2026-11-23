@@ -39,12 +39,15 @@ yarn-error.log*
 .next/
 out/
 .vercel
+*.tsbuildinfo
 
 # Hardhat & Solidity
 artifacts/
 cache/
 typechain/
 typechain-types/
+# Per-network deployment output written by scripts/deploy.js
+contracts/deployment.json
 
 # Environment and sensitive files
 .env

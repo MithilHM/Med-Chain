@@ -53,17 +53,9 @@ export default function GraphPage() {
     let active = true;
     async function loadContext() {
       try {
-        let user = null;
-        const savedUser = window.localStorage.getItem("medchain_user");
-        if (savedUser) {
-          try {
-            user = JSON.parse(savedUser);
-          } catch {
-            window.localStorage.removeItem("medchain_user");
-          }
-        }
-        if (!user?.role) user = (await ApiClient.demoSwitch("doctor")).user;
+        const user = await ApiClient.getCurrentUser();
         if (!active) return;
+        window.localStorage.setItem("medchain_user", JSON.stringify(user));
         setUserRole(user.role);
         if (user.role === "researcher") {
           const projects = await ApiClient.getResearchProjects();
@@ -236,7 +228,7 @@ export default function GraphPage() {
                       }`}
                     >
                       <span className="opacity-70 text-[10px] mr-1.5 uppercase">{node.label}:</span>
-                      <span>{node.properties.name || node.properties.display_code || node.id}</span>
+                      <span>{node.properties.name || (node.properties.pseudonym ? `Patient ${node.properties.pseudonym.slice(0, 6)}` : node.id)}</span>
                     </button>
                   );
                 })}

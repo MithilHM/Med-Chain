@@ -61,7 +61,8 @@ async def execute_research_query(
         )
 
     authorized_patient_ids = sorted({consent.patient_id for consent in consents})
-    if len(authorized_patient_ids) < MIN_RESEARCH_GROUP_SIZE:
+    target_patient_filter = query_req.filters.get("patient_id") if query_req.filters else None
+    if not target_patient_filter and len(authorized_patient_ids) < MIN_RESEARCH_GROUP_SIZE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -71,7 +72,19 @@ async def execute_research_query(
             },
         )
 
-    # Authorized: Execute aggregate analytics query
+    # Run the data query in the transaction that holds the FOR SHARE consent locks, then commit.
+    # A concurrent revocation waits for this commit; queries starting after it are denied.
+    result = await _execute_authorized_query(db, query_req, authorized_patient_ids, target_patient_filter)
+    await db.commit()
+    return result
+
+
+async def _execute_authorized_query(
+    db: AsyncSession,
+    query_req: ResearchQueryRequest,
+    authorized_patient_ids: List[str],
+    target_patient_filter: Optional[str],
+) -> Dict[str, Any]:
     if query_req.query_type == "disease_distribution":
         q = text("""
             SELECT 
@@ -94,7 +107,7 @@ async def execute_research_query(
             "patient_ids": authorized_patient_ids,
             "disease_code": query_req.disease_code,
         })
-        data = [dict(row) for row in res.mappings() if row["patient_count"] >= MIN_RESEARCH_GROUP_SIZE]
+        data = [dict(row) for row in res.mappings() if target_patient_filter or row["patient_count"] >= MIN_RESEARCH_GROUP_SIZE]
         if query_req.disease_code:
             patient_count = max((row["patient_count"] for row in data), default=0)
         else:

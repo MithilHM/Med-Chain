@@ -62,16 +62,16 @@ export default function ConsentPage() {
   };
 
   const handleRevoke = async (consentId: string) => {
-    if (!confirm("Are you sure you want to revoke this consent? All subsequent researcher queries targeting your records will be immediately blocked with HTTP 403.")) {
+    if (!confirm("Revoke this consent? New research authorization checks will be denied. Work that is already running may finish.")) {
       return;
     }
     setActionLoading(consentId);
     try {
       const result = await ApiClient.revokeConsent(consentId);
-      if (result.chain_status === "CONFIRMED") {
-        alert("Consent revoked. The revocation event was confirmed on the local blockchain.");
+      if (result.chain_status === "QUEUED") {
+        alert("Consent revoked. New research access is denied immediately; the revocation evidence is queued for the blockchain ledger.");
       } else {
-        alert(`Consent revoked in MedChain. Blockchain status: ${result.chain_status || "UNANCHORED"}.`);
+        alert(`Consent revoked in MedChain. Blockchain status: ${result.chain_status || "UNKNOWN"}.`);
       }
       await loadData();
     } catch (err: any) {
@@ -90,7 +90,7 @@ export default function ConsentPage() {
       <div>
         <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
           <KeyRound className="w-6 h-6 text-purple-400" />
-          <span>Patient Consent Center & Scope Governance</span>
+          <span>Patient Consent Directives &amp; Scope Governance</span>
         </h1>
         <p className="text-xs text-slate-400">
           Enforces patient data sovereignty, time-scoped permissions, and tamper-evident blockchain anchors
@@ -145,7 +145,7 @@ export default function ConsentPage() {
                           <span className="font-mono">{sc}</span>
                         </label>
                       );
-                    ))}
+                    })}
                   </div>
                 </div>
 
@@ -191,7 +191,7 @@ export default function ConsentPage() {
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-bold text-white">Active Scoped Consents ({activeConsents.length})</h2>
           </div>
-          <span className="text-xs text-slate-400">Enforced immediately before each query</span>
+          <span className="text-xs text-slate-400">Checked for each new query</span>
         </div>
 
         {activeConsents.length === 0 ? (

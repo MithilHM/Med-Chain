@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiClient } from "@/lib/api";
+import LiveClinicalFeed from "@/components/LiveClinicalFeed";
 import {
   Users,
   FileCheck2,
@@ -219,6 +220,9 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {/* Real-time clinical events (care roles only; enforced by the API) */}
+      {role && ["doctor", "patient", "admin"].includes(role) && <LiveClinicalFeed />}
 
       {/* Multi-Store Architectural Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

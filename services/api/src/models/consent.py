@@ -85,4 +85,14 @@ class OutboxEvent(BaseModel):
     payload_json = Column(JSON, nullable=False)
     status = Column(String(50), default="PENDING", nullable=False, index=True)
     attempt_count = Column(Integer, default=0, nullable=False)
+    max_retries = Column(Integer, default=5, nullable=False)
+    last_error = Column(String, nullable=True)
     processed_at = Column(DateTime(timezone=True), nullable=True)
+    # Earliest time the worker may retry (exponential backoff); NULL means immediately.
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    # When a worker claimed the event; stale claims are released after a crash.
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')", name="check_outbox_event_status"),
+    )

@@ -1,17 +1,23 @@
 import time
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import text
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from src import database
 from src.database import get_db
-from src.models import AppUser
+from src.models import AppUser, EmergencyAccessGrant, InboundMessage, OperationalAlert, OutboxEvent
+from src.services import key_rotation
+from src.services.monitoring import run_evaluation
 from src.services.mongo import MongoDocumentService
 from src.services.neo4j_sync import GraphSyncService
 from src.services.blockchain import BlockchainService
 from src.routers.deps import get_current_user, record_access_event, require_role
 from src.config import settings
+from src.services.outbox import OutboxService, OutboxWorker
 
 router = APIRouter(prefix="/admin", tags=["System Health & Administration"])
 
@@ -105,8 +111,21 @@ async def get_system_health(
         db_up = False
 
     mongo_health = await MongoDocumentService.is_healthy()
-    graph_health = GraphSyncService.get_status()
-    chain_health = BlockchainService.get_status()
+    graph_health = await GraphSyncService.get_status_async()
+    chain_health = await BlockchainService.get_status_async()
+    outbox_counts = {}
+    oldest_pending = None
+    review_backlog = 0
+    if db_up:
+        outbox_counts = dict((await db.execute(
+            select(OutboxEvent.status, func.count(OutboxEvent.id)).group_by(OutboxEvent.status)
+        )).all())
+        oldest_pending = (await db.execute(
+            select(func.min(OutboxEvent.created_at)).where(OutboxEvent.status.in_(["PENDING", "PROCESSING"]))
+        )).scalar()
+        review_backlog = (await db.execute(
+            select(func.count(InboundMessage.id)).where(InboundMessage.status == "NEEDS_REVIEW")
+        )).scalar() or 0
 
     database_mode = "sqlite_fallback" if database.is_fallback_active else "postgresql"
     service_health = {
@@ -129,7 +148,16 @@ async def get_system_health(
             },
             "document_store": mongo_health,
             "graph_intelligence": graph_health,
-            "blockchain_evidence": chain_health
+            "blockchain_evidence": chain_health,
+            "transactional_outbox": {
+                "status": "down" if not db_up else ("attention" if outbox_counts.get("FAILED") else "up"),
+                "worker_running": OutboxWorker._task is not None and not OutboxWorker._task.done(),
+                "counts": {name: outbox_counts.get(name, 0) for name in ("PENDING", "PROCESSING", "COMPLETED", "FAILED")},
+                "oldest_undelivered_at": oldest_pending,
+            },
+            "clinical_integration": {
+                "messages_needing_review": review_backlog,
+            },
         }
     }
 
@@ -238,3 +266,221 @@ async def trigger_demo_reset(
     from scripts.reset_demo import reset
     await reset()
     return {"message": "All data stores reset and reseeded with deterministic demo records."}
+
+
+
+@router.get("/outbox/events")
+async def list_outbox_events(
+    event_status: Optional[str] = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=500),
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    counts = dict((await db.execute(
+        select(OutboxEvent.status, func.count(OutboxEvent.id)).group_by(OutboxEvent.status)
+    )).all())
+    query = select(OutboxEvent).order_by(OutboxEvent.created_at.desc()).limit(limit)
+    if event_status:
+        query = query.where(OutboxEvent.status == event_status.upper())
+    events = (await db.execute(query)).scalars().all()
+    summary = {name.lower(): counts.get(name, 0) for name in ("PENDING", "PROCESSING", "COMPLETED", "FAILED")}
+    return {
+        **summary,
+        "total": sum(summary.values()),
+        "events": [
+            {
+                "id": e.id,
+                "event_type": e.event_type,
+                "status": e.status,
+                "attempt_count": e.attempt_count,
+                "max_retries": e.max_retries,
+                "next_attempt_at": e.next_attempt_at,
+                "last_error": e.last_error,
+                "created_at": e.created_at,
+                "processed_at": e.processed_at,
+            }
+            for e in events
+        ],
+    }
+
+
+@router.post("/outbox/process")
+async def process_outbox_events(
+    limit: int = Query(default=20, ge=1, le=500),
+    current_user: AppUser = Depends(require_role(["admin"])),
+):
+    summary = await OutboxWorker.run_once(limit=limit)
+    return {"status": "success", "processed_events": summary["completed"], "summary": summary}
+
+
+@router.post("/outbox/retry-failed")
+async def retry_failed_outbox_events(
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    # Return terminal events to the queue after the underlying cause is fixed.
+    result = await db.execute(
+        text("UPDATE outbox_event SET status = 'PENDING', attempt_count = 0, next_attempt_at = NULL, locked_at = NULL "
+             "WHERE status = 'FAILED'")
+    )
+    await db.commit()
+    return {"status": "success", "reset_events": result.rowcount}
+
+
+@router.get("/disaster-recovery")
+async def get_disaster_recovery_posture(
+    current_user: AppUser = Depends(require_role(["admin"])),
+):
+    """Report DR facts the application can observe. It does not claim backups exist."""
+    return {
+        "status": "NOT_VERIFIED",
+        "observed": {
+            "relational_engine": "sqlite_fallback" if database.is_fallback_active else "postgresql",
+            "document_payload_encryption": "AES-256-GCM (application layer)",
+            "volume_encryption": "unknown to the application",
+            "backups": "unknown to the application",
+            "last_restore_drill": None,
+        },
+        "recommended_targets": {"rpo": "<= 1 hour", "rto": "<= 4 hours"},
+        "note": "Backups, point-in-time recovery, and restore drills are provisioned and evidenced by "
+                "infrastructure. Record a dated, successful restore drill before any hospital pilot.",
+    }
+
+
+@router.get("/alerts")
+async def list_alerts(
+    include_resolved: bool = Query(default=False),
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(OperationalAlert).order_by(OperationalAlert.last_seen_at.desc()).limit(200)
+    if not include_resolved:
+        query = query.where(OperationalAlert.status == "OPEN")
+    return [
+        {
+            "id": a.id, "alert_key": a.alert_key, "severity": a.severity, "summary": a.summary, "status": a.status,
+            "first_seen_at": a.first_seen_at, "last_seen_at": a.last_seen_at, "resolved_at": a.resolved_at,
+            "notified_at": a.notified_at,
+        }
+        for a in (await db.execute(query)).scalars().all()
+    ]
+
+
+@router.post("/alerts/evaluate")
+async def evaluate_alerts_now(current_user: AppUser = Depends(require_role(["admin"]))):
+    return await run_evaluation()
+
+
+@router.get("/encryption/status")
+async def encryption_status(current_user: AppUser = Depends(require_role(["admin"]))):
+    """Counts of encrypted values per key id (to confirm a rotation finished before retiring a key)."""
+    return {
+        "active_key_id": settings.DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID,
+        "configured_key_ids": sorted(settings.encryption_key_ring),
+        "fields": await key_rotation.status(),
+    }
+
+
+class BreakGlassReview(BaseModel):
+    outcome: str = Field(..., pattern="^(APPROPRIATE|INAPPROPRIATE)$")
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+@router.get("/break-glass")
+async def list_break_glass_grants(
+    review_status: Optional[str] = Query(default="PENDING_REVIEW"),
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(EmergencyAccessGrant).order_by(EmergencyAccessGrant.granted_at.desc()).limit(200)
+    if review_status:
+        query = query.where(EmergencyAccessGrant.review_status == review_status.upper())
+    grants = (await db.execute(query)).scalars().all()
+    now = datetime.now(timezone.utc)
+    return [
+        {
+            "id": g.id,
+            "user_id": g.user_id,
+            "patient_id": g.patient_id,
+            "justification": g.justification,
+            "granted_at": g.granted_at,
+            "expires_at": g.expires_at,
+            "active": _aware(g.expires_at) > now and g.review_status != "INAPPROPRIATE",
+            "review_status": g.review_status,
+            "reviewed_by": g.reviewed_by,
+            "reviewed_at": g.reviewed_at,
+            "review_note": g.review_note,
+        }
+        for g in grants
+    ]
+
+
+@router.post("/break-glass/{grant_id}/review")
+async def review_break_glass_grant(
+    grant_id: str,
+    review: BreakGlassReview,
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    grant = await db.get(EmergencyAccessGrant, grant_id)
+    if not grant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Emergency access grant not found.")
+    if grant.user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Reviewers cannot review their own emergency access.")
+    now = datetime.now(timezone.utc)
+    grant.review_status = review.outcome
+    grant.review_note = review.note
+    grant.reviewed_by = current_user.id
+    grant.reviewed_at = now
+    # An INAPPROPRIATE outcome revokes any remaining window immediately: the access check excludes
+    # such grants. The original window is kept unchanged as part of the audit record.
+    await record_access_event(
+        db, current_user.id, grant.patient_id, "BREAK_GLASS_REVIEW", grant.id,
+        "REVIEW_EMERGENCY_ACCESS", "GRANTED", f"REVIEWED_{review.outcome}",
+    )
+    return {"status": "REVIEWED", "grant_id": grant.id, "review_status": grant.review_status}
+
+
+@router.get("/sessions")
+async def list_active_sessions(
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.models.users import UserSession
+    sessions = (await db.execute(
+        select(UserSession).order_by(UserSession.created_at.desc()).limit(100)
+    )).scalars().all()
+    return [
+        {
+            "id": s.id,
+            "user_id": s.user_id,
+            "is_revoked": s.is_revoked,
+            "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "revoked_at": s.revoked_at.isoformat() if s.revoked_at else None,
+        }
+        for s in sessions
+    ]
+
+
+@router.post("/sessions/{session_id}/revoke")
+async def revoke_session(
+    session_id: str,
+    current_user: AppUser = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.models.users import UserSession
+    from src.models.base import get_utc_now
+    session = (await db.execute(
+        select(UserSession).where(UserSession.id == session_id)
+    )).scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+    session.is_revoked = True
+    session.revoked_at = get_utc_now()
+    await db.commit()
+    return {"status": "revoked", "session_id": session_id}

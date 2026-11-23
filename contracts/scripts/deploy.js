@@ -2,20 +2,33 @@ const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
+// Deploys the MedChainAudit evidence contract. MedChainTrustLayer is a deprecated design sketch
+// (public plaintext identifiers, no access control) and is intentionally not deployed.
+//
+// Optional: EXTRA_WRITER_ADDRESSES=0xabc...,0xdef... authorizes additional hospital signing keys.
 async function main() {
   console.log("Deploying MedChainAudit to network:", hre.network.name);
-
   const MedChainAudit = await hre.ethers.getContractFactory("MedChainAudit");
-  const contract = await MedChainAudit.deploy();
-  await contract.waitForDeployment();
+  const auditContract = await MedChainAudit.deploy();
+  await auditContract.waitForDeployment();
+  const auditAddress = await auditContract.getAddress();
+  console.log("MedChainAudit deployed successfully at address:", auditAddress);
 
-  const address = await contract.getAddress();
-  console.log("MedChainAudit deployed successfully at address:", address);
+  const extraWriters = (process.env.EXTRA_WRITER_ADDRESSES || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  for (const writer of extraWriters) {
+    const tx = await auditContract.setWriter(writer, true);
+    await tx.wait();
+    console.log("Authorized additional writer:", writer);
+  }
 
-  // Write deployment info to deployment.json
   const deployInfo = {
     network: hre.network.name,
-    contractAddress: address,
+    medChainAuditAddress: auditAddress,
+    contractAddress: auditAddress,
+    writers: extraWriters,
     deployedAt: new Date().toISOString(),
   };
 

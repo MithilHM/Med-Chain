@@ -8,7 +8,8 @@ import Sidebar from "@/components/Sidebar";
 export default function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isLoginPage = pathname === "/login";
+  // Public pages: sign-in and account activation / patient-portal sign-up.
+  const isLoginPage = pathname === "/login" || pathname === "/signup";
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
@@ -20,22 +21,12 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
 
     setAuthorized(false);
     const authorize = async () => {
-      const token = localStorage.getItem("medchain_token");
-      if (token) {
-        try {
-          const user = await ApiClient.getCurrentUser();
-          localStorage.setItem("medchain_user", JSON.stringify(user));
-          if (active) setAuthorized(true);
-          return;
-        } catch {
-          ApiClient.logout();
-        }
-      }
-
       try {
-        await ApiClient.demoSwitch("doctor");
+        const user = await ApiClient.getCurrentUser();
+        localStorage.setItem("medchain_user", JSON.stringify(user));
         if (active) setAuthorized(true);
       } catch {
+        ApiClient.clearLocalUser();
         if (active) router.replace("/login");
       }
     };

@@ -1,13 +1,18 @@
 from typing import List, Optional
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class PatientOut(BaseModel):
+    """Returned only by care-role endpoints (/patients); never used by research or insurance APIs."""
     id: str
     display_code: str
     date_of_birth: date
     sex: str
     created_at: datetime
+    display_name: Optional[str] = None
+    record_status: str = "ACTIVE"
+    merged_into_id: Optional[str] = None
+    has_portal_account: bool = False
 
     class Config:
         from_attributes = True
@@ -86,17 +91,22 @@ class AdverseEventOut(BaseModel):
 
 class VisitCreate(BaseModel):
     patient_id: str
-    doctor_id: str
-    hospital_id: str
-    visit_type: str
-    summary_code: Optional[str] = None
+    # Doctors record visits under their own profile; administrators choose the doctor.
+    doctor_id: Optional[str] = None
+    hospital_id: Optional[str] = None  # defaults to the doctor's hospital
+    visit_type: str = Field(..., pattern="^(Outpatient Consultation|Inpatient Admission|Emergency Evaluation|Telehealth Review|Clinical Encounter)$")
+    summary_code: Optional[str] = Field(default=None, max_length=50)
+    visit_at: Optional[datetime] = None
 
 class VisitOut(BaseModel):
     id: str
     patient_id: str
     doctor_id: str
     doctor_name: Optional[str] = None
+    hospital_id: Optional[str] = None
     hospital_name: Optional[str] = None
+    status: str = "ACTIVE"
+    discharged_at: Optional[datetime] = None
     visit_at: datetime
     visit_type: str
     summary_code: Optional[str] = None
@@ -112,3 +122,6 @@ class PatientTimelineOut(BaseModel):
     patient: PatientOut
     visits: List[VisitOut]
     adverse_events: List[AdverseEventOut] = []
+    allergies: List[dict] = []
+    care_team: List[dict] = []
+    facilities: List[str] = []

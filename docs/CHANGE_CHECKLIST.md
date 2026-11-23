@@ -41,14 +41,62 @@ For the prioritized static audit, confirmed risks, and optional improvements, se
 - [x] Restricted detailed health and blockchain diagnostics to admins; `/api/v1/health` now exposes only a minimal public liveness status.
 - [x] Validated PostgreSQL URL overrides for strong embedded credentials, supported async/sync drivers, and a shared database target.
 - [x] Blockchain health and contract use now require a matching RPC chain ID and deployed contract bytecode; missing or mismatched chain evidence reports degraded status.
+- [x] Replaced browser-stored bearer tokens with short-lived HttpOnly session cookies; logout invalidates previously issued account tokens.
+- [x] Removed automatic demo-doctor sign-in, disabled API docs outside development/test, and restricted CORS methods and headers.
+- [x] Removed static test/build badges and clarified that this is a prototype not ready for real patient data.
 
-## Essential work still pending
+### 2026-11-22: real-time integration and reliability pass
 
-- [ ] Add revocable browser sessions and production deployment hardening.
-- [ ] Implement transactional outbox delivery and close the consent-revocation race for concurrent research queries.
-- [ ] Make Neo4j rebuilds atomic and health checks reflect live connectivity/freshness.
-- [ ] Return HTTP 503 for unavailable document storage instead of an unhandled 500.
-- [ ] Replace static README pass-count badges with commit-backed CI results.
-- [ ] Start the app with the documented local setup and confirm the core patient, consent, research, document, insurance, integrity, graph, and health workflows operate together.
-- [ ] Resolve any startup or workflow failures found during that hands-on verification.
-- [ ] Add an initial versioned database migration and review schema-level constraints. Alembic dependency/configuration are present, but there are no revision files yet and API startup still relies on `create_all`; this workspace currently has no installed Python runtime or project virtual environment to generate the revision from the models.
+- [x] Regenerated the Alembic baseline from the models (the previous one was missing four tables and many columns) and added migration `002`; verified upgrade, zero drift, downgrade, and re-upgrade.
+- [x] Implemented the transactional outbox end to end: producers enqueue in the authoritative transaction; a background worker delivers with backoff, idempotent on-chain checks, stale-claim recovery, and single-sender election. An unavailable chain no longer counts as delivered.
+- [x] Closed the consent-revocation race with `FOR SHARE` / `FOR UPDATE` locking.
+- [x] Made session checks fail closed; added account lockout, login rate limiting, and timing-equalized sign-in.
+- [x] Added HL7 v2 real-time ingestion (`ADT^A01/A04/A08/A03`, `ORU^R01`) over MLLP (TLS/mTLS) and HTTPS with per-source keys, an encrypted idempotent ledger, identifier-only patient matching, a review queue, and reprocessing.
+- [x] Added a Server-Sent Events stream with per-patient authorization and session re-validation, plus a live clinical feed on the dashboard.
+- [x] Rewrote FHIR import to remove default patients, invented demographics and timestamps, first-row doctor/hospital assignment, and unverified `VERIFIED_MATCH` status.
+- [x] Made break-the-glass grants real (honored by access checks) with a compliance review queue; added care-team assignments.
+- [x] Made document amendments non-destructive, integrity-gated, session-attributed, and anchored with increasing versions.
+- [x] Moved web3 calls off the event loop, serialized nonces, and switched on-chain references to keyed HMAC pseudonyms.
+- [x] Hardened `MedChainAudit` (authorized writers, no consent re-grant, increasing record versions) and stopped deploying the deprecated `MedChainTrustLayer`.
+- [x] Returned HTTP 503 for document-store outages; added request IDs and security headers (`Cache-Control: no-store`).
+- [x] Fixed the `/admin/sessions` crash, the ungated `/graph/path-query`, the fabricated disaster-recovery status, and the invalid token lifetime in `.env.example`.
+- [x] Bound backing-service ports to localhost in Compose and added an optional MLLP service.
+- [x] Added CI jobs for contract tests and PostgreSQL migrations.
+
+### 2026-11-22: identity, clinical lifecycle, and operations pass
+
+- [x] Hospital SSO (OIDC with PKCE), SCIM 2.0 provisioning and deprovisioning, TOTP MFA with recovery codes and replay protection, MFA-required roles, and a bootstrap-admin script.
+- [x] Database-backed login rate limiting shared by all replicas.
+- [x] Encrypted patient names with blind-index search, captured from HL7 `PID-5` and FHIR, shown to care roles only.
+- [x] HL7 `A02` transfer, `A11` cancel admit, `A13` cancel discharge, and approval-gated `A40` merges (two-person rule); merged records are read-only.
+- [x] Care-team and visit-based access end after discharge; cancelled visits grant nothing.
+- [x] Single-hospital boundary via `HOSPITAL_FACILITY_CODES`.
+- [x] PostgreSQL `LISTEN/NOTIFY` event fan-out across API replicas and the MLLP listener.
+- [x] Monitoring: alert lifecycle, webhook notifications, Prometheus `/metrics`, Operations console.
+- [x] Encryption key ring with key IDs, a rotation job and script, and a status endpoint.
+- [x] Atomic, pseudonymous Neo4j rebuild; removed the invented side-effect results; live graph health.
+- [x] Batched and paginated timeline, document list, and audit list.
+- [x] Ledger transactions: gas estimation, EIP-1559, confirmations, secret-file signing key.
+- [x] Migration `003`; CI jobs for PostgreSQL concurrency and the live chain.
+- [x] Frontend: SSO and MFA sign-in, the Account Security page, the Operations console, patient names in charts.
+- [x] Docs: [OPERATIONS.md](OPERATIONS.md) runbook; updated integration, readiness, security, and architecture docs.
+
+### 2026-11-23: sign-up, patient administration, and clinical entry
+
+- [x] Patient-portal sign-up with a one-time activation code issued at registration plus date-of-birth check; codes are hashed, expire, and lock after 5 failures.
+- [x] Staff accounts created by administrators with one-time activation links; password-reset links, MFA reset, role changes, and deactivation (sessions revoked); change-password for signed-in users; a password policy.
+- [x] Patient registration restricted to administrators, with name, registering hospital (MRN authority), primary doctor, and optional portal code. New patients now appear in the primary doctor's list.
+- [x] Care-team management, audited demographic corrections, and server-side search by MRN fragment or family name.
+- [x] Clinical data entry: encounters that work for brand-new patients (previously the UI sent placeholder doctor/hospital IDs), diagnoses, prescriptions, lab results with automatic abnormal flags, discharge, and an allergy list.
+- [x] Hospital directory and doctor directory endpoints; Users & Hospitals admin page; sign-up page.
+- [x] Fixed chart display bugs: hardcoded facility name, `Ref: undefined` on labs, `undefined` in the break-glass confirmation, and the patient search ignoring names.
+- [x] Migration `004`.
+
+## Essential work still pending (requires the hospital)
+
+- [ ] Register MedChain in the hospital IdP, map directory groups, and connect SCIM.
+- [ ] Validate the HL7 interface end to end with the hospital's test feed; register all facility codes and provider IDs.
+- [ ] Stand up a permissioned ledger network with an HSM-backed signer.
+- [ ] Provision TLS, encrypted storage and backups, and a secrets manager; record a restore drill.
+- [ ] Load-test and run failure drills; wire alerts to on-call.
+- [ ] Obtain privacy, security, legal, and clinical-safety approvals and an independent penetration test.

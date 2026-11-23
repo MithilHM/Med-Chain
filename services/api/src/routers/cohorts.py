@@ -81,6 +81,7 @@ async def list_cohorts(
             features=(c.feature_definition_json or {}).get("features", []),
             disclaimer="Exploratory synthetic pattern only. Not for clinical diagnosis or causal inference."
         ))
+    await db.commit()  # persist access decisions and release consent locks
     return out
 
 @router.post("/run", response_model=CohortOut)

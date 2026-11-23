@@ -1,0 +1,179 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ "main", "master", "feature/**" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  backend-tests:
+    name: Backend API, Access Control & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/api/requirements.txt
+
+      - name: Run Pytest Suite
+        working-directory: services/api
+        env:
+          USE_SQLITE_FALLBACK: "true"
+          ENVIRONMENT: "test"
+          DEMO_MODE: "true"
+        run: |
+          pytest -v --junitxml=pytest-report.xml
+
+      - name: Annotate failing tests
+        if: failure()
+        working-directory: services/api
+        run: |
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          report = Path("pytest-report.xml")
+          if not report.exists():
+              raise SystemExit(0)
+          for case in ET.parse(report).iter("testcase"):
+              for problem in list(case.iter("failure")) + list(case.iter("error")):
+                  name = f"{case.get('classname')}::{case.get('name')}"
+                  detail = (problem.get("message") or "") + "\n" + (problem.text or "")[-1500:]
+                  detail = detail.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+                  print(f"::error title={name}::{detail}")
+          EOF
+
+  migrations-postgres:
+    name: Alembic migrations on PostgreSQL (upgrade, drift check, downgrade)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: medchain_ci
+          POSTGRES_PASSWORD: medchain_ci_password_for_tests_only
+          POSTGRES_DB: medchain_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U medchain_ci -d medchain_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ENVIRONMENT: "test"
+      DATABASE_URL: postgresql+asyncpg://medchain_ci:medchain_ci_password_for_tests_only@localhost:5432/medchain_ci
+      DATABASE_SYNC_URL: postgresql://medchain_ci:medchain_ci_password_for_tests_only@localhost:5432/medchain_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r services/api/requirements.txt
+      - name: Upgrade to head
+        working-directory: services/api
+        run: alembic upgrade head
+      - name: Fail if models and migrations have drifted
+        working-directory: services/api
+        run: |
+          python - <<'EOF'
+          from alembic.autogenerate import compare_metadata
+          from alembic.migration import MigrationContext
+          from sqlalchemy import create_engine
+          from src.config import settings
+          from src.database import Base
+          import src.models  # noqa: F401
+          engine = create_engine(settings.DATABASE_SYNC_URL)
+          with engine.connect() as conn:
+              diffs = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+          for diff in diffs:
+              print(diff)
+          raise SystemExit(1 if diffs else 0)
+          EOF
+      - name: Downgrade to base and upgrade again
+        working-directory: services/api
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+      - name: PostgreSQL concurrency guarantees (row locks, advisory lock, LISTEN/NOTIFY)
+        working-directory: services/api
+        env:
+          USE_SQLITE_FALLBACK: "true"
+          DEMO_MODE: "true"
+          TEST_POSTGRES_URL: postgresql+asyncpg://medchain_ci:medchain_ci_password_for_tests_only@localhost:5432/medchain_ci
+        run: pytest -v tests/test_postgres_concurrency.py
+
+  live-chain:
+    name: Outbox delivery against a live Hardhat chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: contracts/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          (cd contracts && npm ci)
+          pip install -r services/api/requirements.txt
+      - name: Start chain and deploy MedChainAudit
+        working-directory: contracts
+        run: |
+          npx hardhat node > hardhat.log 2>&1 &
+          for i in $(seq 1 60); do grep -q "Started HTTP" hardhat.log && break; sleep 1; done
+          npx hardhat run scripts/deploy.js --network localhost
+      - name: Live-chain end-to-end test
+        working-directory: services/api
+        env:
+          USE_SQLITE_FALLBACK: "true"
+          ENVIRONMENT: "test"
+          DEMO_MODE: "true"
+          LIVE_CHAIN: "1"
+        run: pytest -v tests/test_live_chain.py
+
+  contracts:
+    name: Smart Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: contracts/package-lock.json
+      - name: Install dependencies
+        working-directory: contracts
+        run: npm ci
+      - name: Compile and test
+        working-directory: contracts
+        run: npx hardhat test
+
+  frontend-build:
+    name: Frontend Typecheck & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Next.js Production Build
+        working-directory: apps/web
+        run: npm run build

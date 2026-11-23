@@ -49,7 +49,7 @@ async def verify_document_integrity(
         or chain_version != integ.record_version
     ):
         is_valid = False
-        msg = "Integrity metadata does not match the immutable blockchain commitment."
+        msg = "Integrity metadata does not match the on-chain commitment for this record version."
 
     now = datetime.now(timezone.utc)
     integ.verified_at = now

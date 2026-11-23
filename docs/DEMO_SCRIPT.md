@@ -11,7 +11,7 @@ All demo users share the default password: **`Password123!`**
 | Role | Username / Email | Linked Entity | Primary Workflow Responsibility |
 | :--- | :--- | :--- | :--- |
 | **System Admin** | `admin@medchain.local` | Platform Infrastructure | Multi-store health check, graph projection rebuild, store reset |
-| **Primary Patient** | `patient@medchain.local` | Patient `PT-100201` | Review access requests, grant consent, real-time revocation |
+| **Primary Patient** | `patient@medchain.local` | Patient `PT-100201` | Review access requests, grant and revoke consent |
 | **Attending Doctor**| `doctor@medchain.local` | Dr. Sarah Chen, MD | Clinical encounter documentation, visit review, timeline inspection |
 | **Research Scientist**| `researcher@medchain.local`| Academic Consortium | Project creation, access request submission, cohort K-Means, consent queries |
 | **Insurance Analyst**| `analyst@medchain.local` | Health Payer Desk | Atomic claim validation, claim review queue, fraud adjudication |
@@ -99,16 +99,16 @@ All demo users share the default password: **`Password123!`**
 
 ---
 
-### Step 7: Real-Time Patient Consent Revocation & Immediate Enforcement
+### Step 7: Patient Consent Revocation
 1. **Switch Role:** Select **Patient (`patient@medchain.local`)**.
 2. **Navigate to:** `/consent`.
 3. **Action:** Locate the active research consent and click **"Revoke Consent"**.
 4. **Result:**
    - Consent status immediately transitions to `REVOKED` in the authoritative database.
-   - Smart contract emits `ConsentRevoked` event with transaction receipt.
-5. **Immediate Enforcement:**
+   - When the configured blockchain is available, the consent event is also submitted for anchoring.
+5. **Subsequent Authorization Check:**
    - Switch back to **Researcher** -> Attempt to re-run the patient research query.
-   - Result: **HTTP 403 Forbidden** immediately without server restart or caching latency.
+   - Result: the next authorization check returns **HTTP 403 Forbidden**. A query/export already running during revocation is not cancelled; concurrent-query serialization remains a release blocker.
 
 ---
 
@@ -135,7 +135,7 @@ All demo users share the default password: **`Password123!`**
 4. **Step C (Detection):**
    - Click **"Verify Document"** again.
    - Result: **TAMPER DETECTED (Red Alert)**.
-   - Computed hash differs from immutable on-chain commitment. Explanatory diff shows exact discrepancy.
+   - Computed hash differs from the on-chain commitment currently recorded for that document version. Explanatory diff shows the discrepancy.
 
 ---
 
@@ -173,4 +173,4 @@ All demo users share the default password: **`Password123!`**
      - `CONSENT_REVOKED` (with blockchain Tx Hash)
      - `TAMPER_DEMO_MUTATION`
      - `CLAIM_FRAUD_ADJUDICATION`
-   - Complete non-repudiation audit trail suitable for HIPAA/GDPR institutional compliance.
+   - Access and action events appear in the application's audit view, with best-effort chain references where available. This demo does not establish non-repudiation or HIPAA/GDPR compliance.

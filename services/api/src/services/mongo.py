@@ -4,9 +4,9 @@ import os
 import base64
 import secrets
 from typing import Dict, Any, Optional, List
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from motor.motor_asyncio import AsyncIOMotorClient
 from src.config import settings
+from src.services.crypto import decrypt_bytes, encrypt_bytes
 
 logger = logging.getLogger("medchain.mongo")
 
@@ -15,18 +15,21 @@ _fallback_storage_file = os.path.join(os.path.dirname(__file__), "../../../mongo
 _in_memory_docs: Dict[str, Dict[str, Any]] = {}
 
 
+class DocumentStoreUnavailable(RuntimeError):
+    """MongoDB is unreachable and no fallback is permitted; mapped to HTTP 503 by the API."""
+
+
 def _local_fallback_enabled() -> bool:
     return settings.ENVIRONMENT.strip().lower() in {"development", "dev", "test", "testing"}
 
 def _encrypt_document(doc_data: Dict[str, Any]) -> Dict[str, Any]:
-    key = bytes.fromhex(settings.DOCUMENT_ENCRYPTION_KEY)
-    nonce = secrets.token_bytes(12)
     plaintext = json.dumps(doc_data, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    ciphertext = AESGCM(key).encrypt(nonce, plaintext, str(doc_data["_id"]).encode("utf-8"))
+    kid, payload = encrypt_bytes(plaintext, str(doc_data["_id"]).encode("utf-8"))
     return {
         "_id": doc_data["_id"],
-        "encryption_version": 1,
-        "encrypted_payload": base64.b64encode(nonce + ciphertext).decode("ascii"),
+        "encryption_version": 2,
+        "key_id": kid,
+        "encrypted_payload": payload,
     }
 
 def _decrypt_document(stored: Dict[str, Any]) -> Dict[str, Any]:
@@ -34,11 +37,13 @@ def _decrypt_document(stored: Dict[str, Any]) -> Dict[str, Any]:
     if not encrypted_payload:
         # Read legacy documents during the transition to encrypted storage.
         return stored
-    raw = base64.b64decode(encrypted_payload, validate=True)
-    nonce, ciphertext = raw[:12], raw[12:]
-    key = bytes.fromhex(settings.DOCUMENT_ENCRYPTION_KEY)
-    plaintext = AESGCM(key).decrypt(nonce, ciphertext, str(stored["_id"]).encode("utf-8"))
+    kid = stored.get("key_id") if stored.get("encryption_version") == 2 else None
+    plaintext = decrypt_bytes(encrypted_payload, str(stored["_id"]).encode("utf-8"), kid)
     return json.loads(plaintext.decode("utf-8"))
+
+
+def stored_key_id(stored: Dict[str, Any]) -> Optional[str]:
+    return stored.get("key_id") if stored.get("encryption_version") == 2 else None
 
 def _load_fallback():
     global _in_memory_docs
@@ -89,7 +94,7 @@ class MongoDocumentService:
                 logger.warning("MongoDB write failed: %s", e)
 
         if not _local_fallback_enabled():
-            raise RuntimeError("MongoDB is unavailable and local document fallback is disabled outside development and test.")
+            raise DocumentStoreUnavailable("MongoDB is unavailable and local document fallback is disabled outside development and test.")
         
         # Fallback
         _in_memory_docs[doc_id] = _encrypt_document(doc_data)
@@ -137,7 +142,7 @@ class MongoDocumentService:
                 logger.warning("MongoDB read failed: %s", e)
 
         if not _local_fallback_enabled():
-            raise RuntimeError("MongoDB is unavailable and local document fallback is disabled outside development and test.")
+            raise DocumentStoreUnavailable("MongoDB is unavailable and local document fallback is disabled outside development and test.")
         
         doc = _in_memory_docs.get(doc_id)
         if doc and not doc.get("encrypted_payload"):
@@ -145,6 +150,35 @@ class MongoDocumentService:
             _save_fallback()
             doc = _in_memory_docs[doc_id]
         return _decrypt_document(doc) if doc else None
+
+    @staticmethod
+    async def update_document(doc_id: str, updates: Dict[str, Any]) -> bool:
+        """Update multiple fields on an existing document by doc_id."""
+        client = await get_mongo_client()
+        if client:
+            try:
+                db = client[settings.MONGO_DB_NAME]
+                collection = db[settings.MONGO_DOCUMENTS_COLLECTION]
+                current = await collection.find_one({"_id": doc_id})
+                if not current:
+                    return False
+                document = _decrypt_document(current)
+                document.update(updates)
+                result = await collection.replace_one({"_id": doc_id}, _encrypt_document(document))
+                return result.matched_count == 1
+            except Exception as e:
+                logger.warning("MongoDB update failed: %s", e)
+
+        if not _local_fallback_enabled():
+            return False
+
+        if doc_id in _in_memory_docs:
+            document = _decrypt_document(_in_memory_docs[doc_id])
+            document.update(updates)
+            _in_memory_docs[doc_id] = _encrypt_document(document)
+            _save_fallback()
+            return True
+        return False
 
     @staticmethod
     async def update_document_content(doc_id: str, new_content: str) -> bool:
@@ -174,6 +208,32 @@ class MongoDocumentService:
             _save_fallback()
             return True
         return False
+
+    @staticmethod
+    async def reencrypt_all() -> Dict[str, int]:
+        """Re-encrypt every payload not already under the active key (key rotation)."""
+        active = settings.DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID
+        counts = {"reencrypted": 0, "already_current": 0}
+        client = await get_mongo_client()
+        if client:
+            collection = client[settings.MONGO_DB_NAME][settings.MONGO_DOCUMENTS_COLLECTION]
+            async for stored in collection.find({}):
+                if stored_key_id(stored) == active:
+                    counts["already_current"] += 1
+                    continue
+                await collection.replace_one({"_id": stored["_id"]}, _encrypt_document(_decrypt_document(stored)))
+                counts["reencrypted"] += 1
+            return counts
+        if not _local_fallback_enabled():
+            raise DocumentStoreUnavailable("MongoDB is unavailable; key rotation cannot run.")
+        for doc_id, stored in list(_in_memory_docs.items()):
+            if stored_key_id(stored) == active:
+                counts["already_current"] += 1
+                continue
+            _in_memory_docs[doc_id] = _encrypt_document(_decrypt_document(stored))
+            counts["reencrypted"] += 1
+        _save_fallback()
+        return counts
 
     @staticmethod
     async def clear_all():

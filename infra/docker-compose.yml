@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medchain_secret_pass}
       POSTGRES_DB: ${POSTGRES_DB:-medchain_db}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
     container_name: medchain_mongodb
     restart: always
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-medchain}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-medchain_mongo_pass}
@@ -44,8 +44,8 @@ services:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-medchain_graph_pass}
       NEO4J_PLUGINS: '["apoc"]'
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     volumes:
       - neo4j_data:/data
     healthcheck:
@@ -61,7 +61,7 @@ services:
     container_name: medchain_hardhat
     restart: always
     ports:
-      - "8545:8545"
+      - "127.0.0.1:8545:8545"
     healthcheck:
       test:
         - CMD
@@ -87,7 +87,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       BLOCKCHAIN_RPC_URL: http://hardhat:8545
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +97,33 @@ services:
         condition: service_healthy
       hardhat:
         condition: service_healthy
+
+  # Real-time HL7 v2 listener for a hospital interface engine. Start with:
+  #   docker compose -f infra/docker-compose.yml --profile integration up -d
+  # Expose it only on the interface VPN/private network, and configure MLLP_TLS_* for TLS/mTLS.
+  mllp:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    container_name: medchain_mllp
+    profiles: ["integration"]
+    restart: always
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-medchain_user}:${POSTGRES_PASSWORD:-medchain_secret_pass}@postgres:5432/${POSTGRES_DB:-medchain_db}
+      DATABASE_SYNC_URL: postgresql://${POSTGRES_USER:-medchain_user}:${POSTGRES_PASSWORD:-medchain_secret_pass}@postgres:5432/${POSTGRES_DB:-medchain_db}
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-medchain}:${MONGO_ROOT_PASSWORD:-medchain_mongo_pass}@mongodb:27017/?authSource=admin
+      NEO4J_URI: bolt://neo4j:7687
+      BLOCKCHAIN_RPC_URL: http://hardhat:8545
+      MLLP_HOST: 0.0.0.0
+      OUTBOX_WORKER_ENABLED: "false"
+    command: ["python", "-m", "src.integration.mllp_server"]
+    ports:
+      - "127.0.0.1:2575:2575"
+    depends_on:
+      api:
+        condition: service_started
 
   web:
     build:

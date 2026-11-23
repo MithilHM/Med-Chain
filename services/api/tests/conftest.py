@@ -6,6 +6,10 @@ from httpx import AsyncClient, ASGITransport
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../"))
+sys.path.insert(0, os.path.dirname(__file__))
+# Every test client shares one address; the dedicated rate-limit test lowers this itself.
+os.environ.setdefault("LOGIN_RATE_LIMIT_PER_MINUTE", "1000")
+os.environ.setdefault("MONITOR_ENABLED", "false")
 
 from src.main import app
 from scripts.reset_demo import reset

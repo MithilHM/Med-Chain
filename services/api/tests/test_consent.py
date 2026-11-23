@@ -10,7 +10,8 @@ async def test_consent_lifecycle_and_instant_revocation(client):
     assert projects_res.status_code == 200
     projects = projects_res.json()
     assert len(projects) > 0
-    project_id = projects[0]["id"]
+    # Select the seeded project that has patient consents (never rely on list position).
+    project_id = next(p["id"] for p in projects if p["title"].startswith("Type 2 Diabetes"))
 
     # 2. Researcher executes authorized query while consent is active
     query_res = await client.post("/api/v1/research/query", json={

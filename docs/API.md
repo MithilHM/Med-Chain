@@ -1,7 +1,7 @@
 # MedChain REST API Specification
 
 **Base URL:** `/api/v1`  
-**Authentication Scheme:** `Bearer <JWT_TOKEN>`  
+**Authentication:** Short-lived JWT in an HttpOnly, SameSite cookie set by `/auth/login`; production responses do not return the token in JSON. Cookie-authenticated state-changing requests require an allowed `Origin`. For synthetic development/test only, login and demo-switch also return a bearer token for the existing automated API examples; bearer authentication is disabled in production.
 **Default Error Format:**
 ```json
 {
@@ -19,7 +19,7 @@
 ## 1. Authentication & Session (`/auth`)
 
 ### `POST /auth/login`
-- **Description:** Authenticate user credentials and issue short-lived JWT token.
+- **Description:** Authenticate credentials and set a short-lived HttpOnly session cookie. Production does not return the token in JSON; synthetic development/test returns it for local automated API examples.
 - **Request Body:**
   ```json
   {
@@ -30,8 +30,6 @@
 - **Response `200 OK`:**
   ```json
   {
-    "access_token": "eyJhbGciOi...",
-    "token_type": "bearer",
     "user": {
       "id": "uuid",
       "email": "doctor@medchain.local",
@@ -43,6 +41,10 @@
 ### `GET /auth/me`
 - **Description:** Return authenticated user context and linked entity reference (e.g. `patient_id` or `doctor_id`).
 - **Authorization:** Any authenticated user.
+
+### `POST /auth/logout`
+- **Description:** Invalidates previously issued tokens for the account and clears the session cookie.
+- **Authorization:** Authenticated user. Cookie requests must include an allowed `Origin`.
 
 ---
 
@@ -228,3 +230,120 @@
 
 ### `POST /admin/demo/reset`
 - **Description:** Clears all data stores and executes deterministic synthetic seed generator.
+
+
+### `GET /admin/outbox/events` · `POST /admin/outbox/process` · `POST /admin/outbox/retry-failed`
+- **Authorization:** Admin only.
+- **Description:** Delivery status of chain evidence (counts by status, recent events with attempts, next retry, and last error); run one worker iteration on demand; requeue `FAILED` events after fixing the cause.
+
+### `GET /admin/break-glass` · `POST /admin/break-glass/{grant_id}/review`
+- **Authorization:** Admin only (a reviewer cannot review their own grant).
+- **Description:** Compliance queue of emergency-access grants. Body for review: `{"outcome": "APPROPRIATE" | "INAPPROPRIATE", "note": "..."}`. `INAPPROPRIATE` revokes any remaining window immediately.
+
+---
+
+## 9. Emergency Access (`/patients`)
+
+### `POST /patients/{patient_id}/break-glass`
+- **Authorization:** Doctor or admin. Body: `{"justification": "at least 10 characters"}`.
+- **Description:** Creates a time-boxed grant (`BREAK_GLASS_WINDOW_MINUTES`, default 240) that the access check honors, audits it, and announces it to administrators in real time.
+- **Response:** `{"status": "GRANTED", "grant_id", "patient_id", "expires_at", "emergency_window_minutes", ...}`
+
+---
+
+## 10. Real-time Clinical Integration (`/integration`, `/events`)
+
+### `POST /integration/hl7v2[?format=json]`
+- **Authorization:** `X-Integration-Key` (per source system) or an admin session.
+- **Body:** one HL7 v2 ER7 message (`Content-Type: x-application/hl7-v2+er7`).
+- **Response:** an HL7 `ACK` (`MSA-1` = `AA` / `AR` / `AE`), plus headers `X-MedChain-Ack-Code`, `X-MedChain-Message-Status`, `X-MedChain-Message-Id`. See [INTEGRATION.md](INTEGRATION.md).
+
+### `GET /integration/messages?status=NEEDS_REVIEW` · `POST /integration/messages/{id}/reprocess` · `GET /integration/status`
+- **Authorization:** Admin only. Metadata only; raw payloads are never returned.
+
+### `GET /events/stream`
+- **Authorization:** Admin, doctor, or patient session (researchers and insurance analysts receive 403).
+- **Response:** `text/event-stream`. Event types include `encounter.admitted`, `encounter.discharged`, `lab_result.created`, `lab_result.corrected`, `patient.registered`, `document.created`, `document.amended`, `consent.revoked`, and (admins only) `break_glass.granted` and `integration.needs_review`. Payloads carry identifiers and flags only. The stream sends `session_expired` and closes when the session is revoked or expires.
+
+### Chain status in write responses
+Consent decisions, revocations, and amendments return `"chain_status": "QUEUED"`: the database change is authoritative immediately, and the evidence is delivered by the outbox worker.
+
+---
+
+## 11. Identity: SSO, MFA, and SCIM (`/auth`, `/scim/v2`)
+
+### `GET /auth/config`
+- **Public.** Which sign-in methods the login page offers: `{oidc_enabled, oidc_login_url, password_login, demo_mode}`.
+
+### `POST /auth/login`
+- Password step. Returns `{"user": ...}` with a session cookie, or `{"mfa_required": true, "mfa_token": "..."}` when the account has MFA (no session is issued yet). Returns 403 if the role requires MFA and none is enrolled, and 429 when the shared per-client rate limit is exceeded.
+
+### `POST /auth/mfa/verify`
+- Body `{"mfa_token", "code"}`. `code` is a current TOTP code or a one-time recovery code; a reused time step is rejected. Issues the session.
+
+### `POST /auth/mfa/enroll` · `POST /auth/mfa/activate` · `POST /auth/mfa/disable`
+- Local accounts only. `enroll` returns `{secret, otpauth_uri}`; `activate` (body `{"code"}`) returns one-time `recovery_codes`; `disable` requires a current code, is refused for MFA-required roles, and signs out every session.
+
+### `GET /auth/oidc/login` → `GET /auth/oidc/callback`
+- Hospital SSO (authorization code + PKCE). The callback verifies the ID token, maps directory groups to a role through `OIDC_ROLE_MAP`, links or (if enabled) provisions the account, sets the session cookie, and redirects to `OIDC_POST_LOGIN_REDIRECT`.
+
+### `/scim/v2/Users`
+- `GET` (with `filter=userName eq "..."`), `GET /{id}`, `POST`, `PUT /{id}`, `PATCH /{id}` (`active`, `roles`, `userName`), `DELETE /{id}` (deactivates). Authenticated with `Authorization: Bearer <token>` matching `SCIM_BEARER_TOKEN_HASH`. Deactivation revokes sessions immediately.
+
+## 12. Merges and Operations (`/integration/merges`, `/admin`, `/metrics`)
+
+### `GET /integration/merges?status=PENDING` · `POST /integration/merges` · `POST /integration/merges/{id}/approve|reject`
+- **Admin only.** Proposals come from ADT^A40 or an operator (`{surviving_patient_id, retiring_patient_id, reason}`). Approval needs a different administrator and identical dates of birth, and moves clinical, consent, coverage, identity, and care-team rows in one transaction. The retired record becomes `MERGED` and read-only (writes return 409).
+
+### `GET /admin/alerts` · `POST /admin/alerts/evaluate`
+- Open (or, with `include_resolved=true`, all) operational alerts; evaluate now.
+
+### `GET /admin/encryption/status`
+- Active key, configured key IDs, and counts of encrypted values per key ID for each encrypted field.
+
+### `GET /metrics`
+- Prometheus text format. `Authorization: Bearer <token>` matching `METRICS_BEARER_TOKEN_HASH`, or an admin session. Counts only; no patient data.
+
+### Patient endpoints (changes)
+- `GET /patients?family_name=Doe&limit=&offset=`: exact, accent- and case-insensitive family-name search (blind index).
+- `PatientOut` now includes `display_name`, `record_status`, and `merged_into_id`.
+- `POST /patients` accepts `given_name` and `family_name`.
+- `GET /patients/{id}/timeline?limit=&offset=&include_cancelled=` is paginated and hides cancelled visits by default.
+
+---
+
+## 13. Sign-up and Account Administration (`/auth`, `/admin/users`, `/admin/hospitals`, `/doctors`)
+
+There is no open self-registration: every account is tied to an identity the hospital verified.
+
+### `GET /auth/invitations/{code}` · `POST /auth/signup`
+- **Public**, rate-limited. `preview` tells the form what to ask for. `signup` body: `{token, password, email?, date_of_birth?}`.
+  - `PATIENT_PORTAL`: requires the patient's email and date of birth. A wrong date counts as a failed attempt, and 5 failures lock the code. The new account is linked to the patient record.
+  - `STAFF_ACTIVATION` / `PASSWORD_RESET`: sets the password and signs out existing sessions.
+- Passwords: 12–128 characters, letters and numbers, not a common password, not containing the email name. Codes are single use and expire (portal 7 days, staff activation 72 h, reset 24 h).
+
+### `POST /auth/password`
+- Signed-in local accounts: `{current_password, new_password}`. Signs out every other session.
+
+### `GET /admin/users` · `POST /admin/users` · `PATCH /admin/users/{id}` · `POST /admin/users/{id}/password-reset` · `POST /admin/users/{id}/mfa-reset`
+- **Admin only.** Creating a staff account (`doctor` needs `display_name`, `specialty`, `hospital_id`, optional `external_provider_id`; `insurance_analyst` needs `insurance_provider_id`) returns a one-time `activation_link`. `PATCH` changes `is_active` or `role`; deactivation and role changes revoke sessions; admins cannot deactivate or demote themselves.
+
+### `GET /admin/hospitals` · `POST /admin/hospitals` · `GET /admin/insurance-providers` · `GET /doctors`
+- Directory data for registration, staff creation, and care-team assignment.
+
+## 14. Patient Administration and Clinical Entry
+
+### `POST /patients` (admin only)
+- `{display_code (MRN), date_of_birth, sex, given_name, family_name, hospital_id, primary_doctor_id?, issue_portal_invitation?}`. The hospital's facility code is the MRN's assigning authority. A primary doctor puts the patient on that doctor's list. Returns `portal_activation_code` when requested (shown once).
+
+### `PATCH /patients/{id}` · `POST /patients/{id}/portal-invitation` · `GET|POST /patients/{id}/care-team` · `DELETE /patients/{id}/care-team/{assignment_id}`
+- Admin demographic corrections (audited), portal codes, and care-team management (doctors can read the care team).
+
+### `GET|POST /patients/{id}/allergies` · `PATCH /patients/{id}/allergies/{allergy_id}`
+- Allergy list (doctors and admins write; the patient can read their own). The timeline returns active allergies, the active care team, and facilities.
+
+### `POST /visits`
+- Doctors record under their own profile; admins pass `doctor_id`. The hospital defaults to the doctor's hospital. Future-dated encounters are rejected.
+
+### `POST /visits/{id}/diagnoses` · `/prescriptions` · `/lab-results` · `/discharge` · `GET /lab-tests`
+- Codes must come from the catalogs (`/diseases`, `/medications`, `/lab-tests`). Lab results are flagged abnormal automatically when outside the reference range. Discharge closes the encounter and ends attending access after the post-discharge window. Cancelled visits cannot be changed.
