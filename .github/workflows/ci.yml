@@ -30,7 +30,25 @@ jobs:
           ENVIRONMENT: "test"
           DEMO_MODE: "true"
         run: |
-          pytest -v
+          pytest -v --junitxml=pytest-report.xml
+
+      - name: Annotate failing tests
+        if: failure()
+        working-directory: services/api
+        run: |
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          report = Path("pytest-report.xml")
+          if not report.exists():
+              raise SystemExit(0)
+          for case in ET.parse(report).iter("testcase"):
+              for problem in list(case.iter("failure")) + list(case.iter("error")):
+                  name = f"{case.get('classname')}::{case.get('name')}"
+                  detail = (problem.get("message") or "") + "\n" + (problem.text or "")[-1500:]
+                  detail = detail.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+                  print(f"::error title={name}::{detail}")
+          EOF
 
   migrations-postgres:
     name: Alembic migrations on PostgreSQL (upgrade, drift check, downgrade)
