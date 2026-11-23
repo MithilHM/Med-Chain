@@ -136,8 +136,12 @@ export default function LoginPage() {
           </form>
         )}
 
-        <div className="text-center text-xs text-slate-500">
-          <Link href="/" className="text-cyan-300 hover:text-cyan-200">Return to dashboard</Link>
+        <div className="text-center text-xs text-slate-500 space-y-1">
+          <div>
+            Patient with an activation code, or staff with an activation link?{" "}
+            <Link href="/signup" className="text-cyan-300 hover:text-cyan-200">Create your account</Link>
+          </div>
+          <div>Forgot your password? Ask the hospital help desk for a reset link.</div>
         </div>
       </div>
     </div>

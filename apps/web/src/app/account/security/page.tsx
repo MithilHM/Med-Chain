@@ -10,6 +10,9 @@ export default function AccountSecurityPage() {
   const [enrollment, setEnrollment] = useState<{ secret: string; otpauth_uri: string } | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [code, setCode] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,6 +120,33 @@ export default function AccountSecurityPage() {
           </div>
         )}
       </section>
+
+      {isLocal && (
+        <section className="glass-panel rounded-2xl border border-slate-800 p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-semibold text-white">Change password</h2>
+          </div>
+          <form className="grid grid-cols-1 md:grid-cols-3 gap-2" onSubmit={(e) => {
+            e.preventDefault();
+            if (newPassword !== confirmPassword) { setError("The new passwords do not match."); return; }
+            void run(async () => {
+              await ApiClient.changePassword(currentPassword, newPassword);
+              setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+              setMessage("Password changed. Other devices were signed out.");
+              await load();
+            });
+          }}>
+            <input type="password" required autoComplete="current-password" placeholder="Current password" value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)} className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white" />
+            <input type="password" required minLength={12} autoComplete="new-password" placeholder="New password (12+ chars)" value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)} className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white" />
+            <input type="password" required autoComplete="new-password" placeholder="Confirm new password" value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)} className="rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-white" />
+            <button className="md:col-span-3 justify-self-start rounded-lg bg-cyan-600 hover:bg-cyan-500 px-4 py-2 text-sm font-semibold text-white">Update password</button>
+          </form>
+        </section>
+      )}
 
       <section className="glass-panel rounded-2xl border border-slate-800 p-6 space-y-3">
         <div className="flex items-center gap-2">

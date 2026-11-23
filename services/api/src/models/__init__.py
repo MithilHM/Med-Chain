@@ -2,7 +2,7 @@ from src.models.base import BaseModel, generate_uuid, get_utc_now
 from src.models.users import AppUser, UserSession, Hospital, Doctor, Patient, ResearchOrganization, ResearchProject
 from src.models.clinical import (
     Visit, Disease, Diagnosis, Medication, Prescription,
-    Treatment, LabTest, LabResult, SideEffect, ObservedAdverseEvent
+    Treatment, LabTest, LabResult, SideEffect, ObservedAdverseEvent, PatientAllergy
 )
 from src.models.documents import MedicalDocument, RecordIntegrity
 from src.models.insurance import InsuranceProvider, InsuranceAnalyst, InsurancePolicy, InsuranceClaim, ClaimItem
@@ -10,7 +10,7 @@ from src.models.consent import Consent, AccessRequest, AccessEvent, BlockchainEv
 from src.models.analytics import Cohort, CohortMembership, AnalyticsRun
 from src.models.integration import (
     PatientIdentifier, CareTeamAssignment, EmergencyAccessGrant, InboundMessage,
-    LoginAttempt, PatientMergeRequest, OperationalAlert,
+    LoginAttempt, PatientMergeRequest, OperationalAlert, AccountInvitation,
 )
 
 __all__ = [
@@ -56,4 +56,6 @@ __all__ = [
     "LoginAttempt",
     "PatientMergeRequest",
     "OperationalAlert",
+    "AccountInvitation",
+    "PatientAllergy",
 ]

@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -17,12 +17,14 @@ from src.database import get_db
 from src.models import AppUser, Doctor, LoginAttempt, Patient, UserSession
 from src.routers.deps import get_current_user, record_access_event, security
 from src.schemas.auth import LoginRequest, UserOut
+from src.services import accounts
 from src.services import mfa as totp
 from src.services import oidc
 from src.services.auth import (
     account_locked_until,
     create_access_token,
     decode_access_token,
+    hash_password,
     register_failed_login,
     register_successful_login,
     register_user_session,
@@ -344,6 +346,126 @@ async def oidc_callback(request: Request, code: str = "", state: str = "", error
     await _issue_session(user, request, redirect, db)
     redirect.delete_cookie(oidc.STATE_COOKIE, path="/api/v1/auth/oidc")
     return redirect
+
+
+class SignupRequest(BaseModel):
+    token: str = Field(..., min_length=8, max_length=40)
+    password: str = Field(..., max_length=128)
+    email: Optional[str] = Field(default=None, max_length=255)          # patient portal only
+    date_of_birth: Optional[date] = None                                # patient portal only
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(..., max_length=128)
+    new_password: str = Field(..., max_length=128)
+
+
+def _mask_email(email: str) -> str:
+    local, _, domain = email.partition("@")
+    return (local[:2] + "***@" + domain) if domain else "***"
+
+
+@router.get("/invitations/{token}")
+async def preview_invitation(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Public: what the sign-up form must ask for. Reveals no patient data."""
+    await _enforce_login_rate_limit(db, _client_key(request))
+    invitation = await accounts.find_usable(db, token)
+    await db.commit()
+    if invitation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This link or code is invalid, expired, or already used.")
+    body = {"purpose": invitation.purpose, "expires_at": invitation.expires_at}
+    if invitation.purpose == "PATIENT_PORTAL":
+        body.update(requires_email=True, requires_date_of_birth=True)
+    else:
+        user = await db.get(AppUser, invitation.user_id)
+        body.update(requires_email=False, requires_date_of_birth=False, email=_mask_email(user.email), role=user.role)
+    return body
+
+
+@router.post("/signup")
+async def signup(body: SignupRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Complete a patient-portal sign-up, a staff activation, or a password reset."""
+    await _enforce_login_rate_limit(db, _client_key(request))
+    invitation = await accounts.find_usable(db, body.token, for_update=True)
+    invalid = HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This link or code is invalid, expired, or already used.")
+    if invitation is None:
+        await db.commit()
+        raise invalid
+
+    if invitation.purpose == "PATIENT_PORTAL":
+        patient = await db.get(Patient, invitation.patient_id)
+        email = (body.email or "").strip().lower()
+        if patient is None or patient.record_status != "ACTIVE":
+            await db.commit()
+            raise invalid
+        if not body.date_of_birth or body.date_of_birth != patient.date_of_birth:
+            invitation.failed_attempts += 1  # repeated wrong birth dates lock the code
+            await db.commit()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="The details you entered do not match our records.")
+        if patient.user_id:
+            await db.commit()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A portal account already exists for this record.")
+        if "@" not in email or (await db.execute(select(AppUser.id).where(AppUser.email == email))).scalar_one_or_none():
+            await db.commit()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Use a different email address.")
+        try:
+            accounts.validate_password(body.password, email)
+        except accounts.PasswordPolicyError as exc:
+            await db.commit()
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        user = AppUser(email=email, password_hash=hash_password(body.password), role="patient", auth_source="LOCAL")
+        db.add(user)
+        await db.flush()
+        patient.user_id = user.id
+        action = "PATIENT_PORTAL_SIGNUP"
+    else:
+        user = await db.get(AppUser, invitation.user_id)
+        if user is None or not user.is_active:
+            await db.commit()
+            raise invalid
+        try:
+            accounts.validate_password(body.password, user.email)
+        except accounts.PasswordPolicyError as exc:
+            await db.commit()
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+        user.password_hash = hash_password(body.password)
+        user.failed_login_count, user.locked_until = 0, None
+        await revoke_all_user_sessions(db, user.id)
+        action = "STAFF_ACTIVATION" if invitation.purpose == "STAFF_ACTIVATION" else "PASSWORD_RESET"
+
+    invitation.used_at = datetime.now(timezone.utc)
+    await record_access_event(db, user.id, invitation.patient_id, "AUTHENTICATION", user.id, action, "GRANTED",
+                              "ONE_TIME_CREDENTIAL", commit=False)
+    if user.mfa_enabled:
+        await db.commit()
+        return {"status": "PASSWORD_SET", "sign_in_required": True}
+    result = await _session_response(user, request, response, db)
+    result["mfa_enrollment_required"] = user.role in settings.mfa_required_roles
+    return result
+
+
+@router.post("/password")
+async def change_password(body: PasswordChangeRequest, request: Request, response: Response,
+                          current_user: AppUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if current_user.auth_source != "LOCAL":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SSO account passwords are managed by the hospital identity provider.")
+    if not verify_password_or_dummy(body.current_password, current_user.password_hash):
+        register_failed_login(current_user)
+        await record_access_event(db, current_user.id, None, "AUTHENTICATION", current_user.id, "PASSWORD_CHANGE",
+                                  "DENIED", "BAD_CREDENTIALS")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+    try:
+        accounts.validate_password(body.new_password, current_user.email)
+    except accounts.PasswordPolicyError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    current_user.password_hash = hash_password(body.new_password)
+    await revoke_all_user_sessions(db, current_user.id)  # sign out every other device
+    await record_access_event(db, current_user.id, None, "AUTHENTICATION", current_user.id, "PASSWORD_CHANGE",
+                              "GRANTED", "PASSWORD_CHANGED", commit=False)
+    await _issue_session(current_user, request, response, db)
+    return {"status": "PASSWORD_CHANGED", "note": "Other sessions were signed out."}
 
 
 @router.get("/me", response_model=UserOut)

@@ -158,3 +158,21 @@ class ObservedAdverseEvent(BaseModel):
     patient = relationship("Patient", back_populates="adverse_events")
     prescription = relationship("Prescription", back_populates="adverse_events")
     side_effect = relationship("SideEffect", back_populates="adverse_events")
+
+
+class PatientAllergy(BaseModel):
+    """Allergy / intolerance list (shown as a banner on the chart)."""
+    __tablename__ = "patient_allergy"
+
+    patient_id = Column(String(36), ForeignKey("patient.id"), nullable=False, index=True)
+    substance = Column(String(150), nullable=False)
+    reaction = Column(String(200), nullable=True)
+    severity = Column(String(20), nullable=False, default="UNKNOWN")
+    status = Column(String(20), nullable=False, default="ACTIVE")
+    recorded_by = Column(String(36), ForeignKey("app_user.id"), nullable=True)
+    recorded_at = Column(DateTime(timezone=True), default=get_utc_now, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("severity IN ('MILD', 'MODERATE', 'SEVERE', 'UNKNOWN')", name="check_allergy_severity"),
+        CheckConstraint("status IN ('ACTIVE', 'INACTIVE', 'ENTERED_IN_ERROR')", name="check_allergy_status"),
+    )

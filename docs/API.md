@@ -309,3 +309,41 @@ Consent decisions, revocations, and amendments return `"chain_status": "QUEUED"`
 - `PatientOut` now includes `display_name`, `record_status`, and `merged_into_id`.
 - `POST /patients` accepts `given_name` and `family_name`.
 - `GET /patients/{id}/timeline?limit=&offset=&include_cancelled=` is paginated and hides cancelled visits by default.
+
+---
+
+## 13. Sign-up and Account Administration (`/auth`, `/admin/users`, `/admin/hospitals`, `/doctors`)
+
+There is no open self-registration: every account is tied to an identity the hospital verified.
+
+### `GET /auth/invitations/{code}` · `POST /auth/signup`
+- **Public**, rate-limited. `preview` tells the form what to ask for. `signup` body: `{token, password, email?, date_of_birth?}`.
+  - `PATIENT_PORTAL`: requires the patient's email and date of birth. A wrong date counts as a failed attempt, and 5 failures lock the code. The new account is linked to the patient record.
+  - `STAFF_ACTIVATION` / `PASSWORD_RESET`: sets the password and signs out existing sessions.
+- Passwords: 12–128 characters, letters and numbers, not a common password, not containing the email name. Codes are single use and expire (portal 7 days, staff activation 72 h, reset 24 h).
+
+### `POST /auth/password`
+- Signed-in local accounts: `{current_password, new_password}`. Signs out every other session.
+
+### `GET /admin/users` · `POST /admin/users` · `PATCH /admin/users/{id}` · `POST /admin/users/{id}/password-reset` · `POST /admin/users/{id}/mfa-reset`
+- **Admin only.** Creating a staff account (`doctor` needs `display_name`, `specialty`, `hospital_id`, optional `external_provider_id`; `insurance_analyst` needs `insurance_provider_id`) returns a one-time `activation_link`. `PATCH` changes `is_active` or `role`; deactivation and role changes revoke sessions; admins cannot deactivate or demote themselves.
+
+### `GET /admin/hospitals` · `POST /admin/hospitals` · `GET /admin/insurance-providers` · `GET /doctors`
+- Directory data for registration, staff creation, and care-team assignment.
+
+## 14. Patient Administration and Clinical Entry
+
+### `POST /patients` (admin only)
+- `{display_code (MRN), date_of_birth, sex, given_name, family_name, hospital_id, primary_doctor_id?, issue_portal_invitation?}`. The hospital's facility code is the MRN's assigning authority. A primary doctor puts the patient on that doctor's list. Returns `portal_activation_code` when requested (shown once).
+
+### `PATCH /patients/{id}` · `POST /patients/{id}/portal-invitation` · `GET|POST /patients/{id}/care-team` · `DELETE /patients/{id}/care-team/{assignment_id}`
+- Admin demographic corrections (audited), portal codes, and care-team management (doctors can read the care team).
+
+### `GET|POST /patients/{id}/allergies` · `PATCH /patients/{id}/allergies/{allergy_id}`
+- Allergy list (doctors and admins write; the patient can read their own). The timeline returns active allergies, the active care team, and facilities.
+
+### `POST /visits`
+- Doctors record under their own profile; admins pass `doctor_id`. The hospital defaults to the doctor's hospital. Future-dated encounters are rejected.
+
+### `POST /visits/{id}/diagnoses` · `/prescriptions` · `/lab-results` · `/discharge` · `GET /lab-tests`
+- Codes must come from the catalogs (`/diseases`, `/medications`, `/lab-tests`). Lab results are flagged abnormal automatically when outside the reference range. Discharge closes the encounter and ends attending access after the post-discharge window. Cancelled visits cannot be changed.

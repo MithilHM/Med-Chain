@@ -8,7 +8,8 @@ import Sidebar from "@/components/Sidebar";
 export default function AuthShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isLoginPage = pathname === "/login";
+  // Public pages: sign-in and account activation / patient-portal sign-up.
+  const isLoginPage = pathname === "/login" || pathname === "/signup";
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {

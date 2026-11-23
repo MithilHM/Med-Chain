@@ -160,13 +160,69 @@ export const ApiClient = {
   runDbmsShowcaseQuery: (queryId: string) =>
     request<any>(`/admin/dbms/showcase/${encodeURIComponent(queryId)}`),
 
-  getPatients: () => request<any[]>("/patients"),
+  getPatients: (q?: string) => request<any[]>(`/patients${query({ q: q || undefined })}`),
   getPatient: (patientId: string) => request<any>(`/patients/${encodeURIComponent(patientId)}`),
   getPatientTimeline: (patientId: string) =>
     request<any>(`/patients/${encodeURIComponent(patientId)}/timeline`),
 
-  registerPatient: (payload: { display_code: string; date_of_birth: string; sex: string }) =>
-    request<any>("/patients", { method: "POST", body: payload }),
+  /** Administrators only. Returns the patient plus a one-time portal code when requested. */
+  registerPatient: (payload: {
+    display_code: string; date_of_birth: string; sex: string; given_name?: string; family_name?: string;
+    hospital_id: string; primary_doctor_id?: string; issue_portal_invitation?: boolean;
+  }) => request<any>("/patients", { method: "POST", body: payload }),
+  updatePatient: (patientId: string, payload: Record<string, any>) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}`, { method: "PATCH", body: payload }),
+  issuePortalInvitation: (patientId: string) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}/portal-invitation`, { method: "POST" }),
+  getCareTeam: (patientId: string) => request<any[]>(`/patients/${encodeURIComponent(patientId)}/care-team`),
+  addCareTeamMember: (patientId: string, doctorId: string, relationshipType: string) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}/care-team`, {
+      method: "POST", body: { doctor_id: doctorId, relationship_type: relationshipType },
+    }),
+  endCareTeamMember: (patientId: string, assignmentId: string) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}/care-team/${encodeURIComponent(assignmentId)}`, { method: "DELETE" }),
+  addAllergy: (patientId: string, payload: { substance: string; reaction?: string; severity: string }) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}/allergies`, { method: "POST", body: payload }),
+  updateAllergyStatus: (patientId: string, allergyId: string, status: string) =>
+    request<any>(`/patients/${encodeURIComponent(patientId)}/allergies/${encodeURIComponent(allergyId)}`, {
+      method: "PATCH", body: { status },
+    }),
+
+  getDoctors: () => request<any[]>("/doctors"),
+  getDiseases: () => request<any[]>("/diseases"),
+  getMedications: () => request<any[]>("/medications"),
+  getLabTests: () => request<any[]>("/lab-tests"),
+  addDiagnosis: (visitId: string, payload: { disease_code: string; severity: string; status?: string }) =>
+    request<any>(`/visits/${encodeURIComponent(visitId)}/diagnoses`, { method: "POST", body: payload }),
+  addPrescription: (visitId: string, payload: Record<string, any>) =>
+    request<any>(`/visits/${encodeURIComponent(visitId)}/prescriptions`, { method: "POST", body: payload }),
+  addLabResult: (visitId: string, payload: { lab_test_code: string; result_value: number }) =>
+    request<any>(`/visits/${encodeURIComponent(visitId)}/lab-results`, { method: "POST", body: payload }),
+  dischargeVisit: (visitId: string) =>
+    request<any>(`/visits/${encodeURIComponent(visitId)}/discharge`, { method: "POST" }),
+
+  // Sign-up, activation, and account administration
+  previewInvitation: (token: string) => request<any>(`/auth/invitations/${encodeURIComponent(token.trim())}`),
+  async signup(payload: { token: string; password: string; email?: string; date_of_birth?: string }) {
+    const result = await request<any>("/auth/signup", { method: "POST", body: payload });
+    if (result.user && typeof window !== "undefined") {
+      window.localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+      notifyUserContextChanged();
+    }
+    return result;
+  },
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<any>("/auth/password", { method: "POST", body: { current_password: currentPassword, new_password: newPassword } }),
+  listUsers: (role?: string) => request<any[]>(`/admin/users${query({ role })}`),
+  createStaffUser: (payload: Record<string, any>) => request<any>("/admin/users", { method: "POST", body: payload }),
+  updateUser: (userId: string, payload: { is_active?: boolean; role?: string }) =>
+    request<any>(`/admin/users/${encodeURIComponent(userId)}`, { method: "PATCH", body: payload }),
+  issuePasswordReset: (userId: string) =>
+    request<any>(`/admin/users/${encodeURIComponent(userId)}/password-reset`, { method: "POST" }),
+  resetUserMfa: (userId: string) => request<any>(`/admin/users/${encodeURIComponent(userId)}/mfa-reset`, { method: "POST" }),
+  createHospital: (payload: { name: string; region: string; facility_code: string }) =>
+    request<any>("/admin/hospitals", { method: "POST", body: payload }),
+  getInsuranceProviders: () => request<any[]>("/admin/insurance-providers"),
 
   breakGlassEmergency: (patientId: string, justification: string) =>
     request<any>(`/patients/${encodeURIComponent(patientId)}/break-glass`, {
@@ -297,7 +353,5 @@ export const ApiClient = {
 
   // Workstation Sessions
   listSessions: () => request<any[]>("/auth/sessions"),
-  revokeSession: (tokenJti: string) =>
-    request<any>("/auth/sessions/revoke", { method: "POST", body: { token_jti: tokenJti } }),
   revokeAllSessions: () => request<any>("/auth/sessions/revoke-all", { method: "POST" }),
 };

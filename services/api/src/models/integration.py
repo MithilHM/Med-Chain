@@ -151,3 +151,30 @@ class OperationalAlert(BaseModel):
         CheckConstraint("severity IN ('critical', 'warning', 'info')", name="check_alert_severity"),
         CheckConstraint("status IN ('OPEN', 'RESOLVED')", name="check_alert_status"),
     )
+
+
+class AccountInvitation(BaseModel):
+    """One-time credential for creating or recovering an account (stored only as a hash).
+
+    PATIENT_PORTAL: issued by registration staff; the patient also proves their date of birth.
+    STAFF_ACTIVATION: issued when an administrator creates a staff account.
+    PASSWORD_RESET: issued by an administrator for an existing local account.
+    """
+    __tablename__ = "account_invitation"
+
+    purpose = Column(String(30), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    user_id = Column(String(36), ForeignKey("app_user.id", ondelete="CASCADE"), nullable=True, index=True)
+    patient_id = Column(String(36), ForeignKey("patient.id", ondelete="CASCADE"), nullable=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    failed_attempts = Column(Integer, nullable=False, default=0)
+    created_by = Column(String(36), ForeignKey("app_user.id"), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("purpose IN ('PATIENT_PORTAL', 'STAFF_ACTIVATION', 'PASSWORD_RESET')",
+                        name="check_invitation_purpose"),
+        CheckConstraint("(purpose = 'PATIENT_PORTAL' AND patient_id IS NOT NULL) OR "
+                        "(purpose <> 'PATIENT_PORTAL' AND user_id IS NOT NULL)", name="check_invitation_target"),
+    )

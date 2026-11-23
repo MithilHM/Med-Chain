@@ -19,6 +19,7 @@ import {
   Database,
   Activity,
   Lock,
+  UserCog,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -51,6 +52,7 @@ export default function Sidebar() {
     { label: "Record Integrity", href: "/integrity", icon: CheckSquare, roles: ["patient", "doctor", "admin"] },
     { label: "Audit & Ledger", href: "/audit", icon: ScrollText, roles: ["patient", "doctor", "admin"] },
     { label: "System Health", href: "/admin", icon: ServerCog, roles: ["admin"] },
+    { label: "Users & Hospitals", href: "/admin/users", icon: UserCog, roles: ["admin"] },
     { label: "Operations", href: "/admin/operations", icon: Activity, roles: ["admin"] },
     { label: "DBMS Showcase", href: "/admin/dbms", icon: Database, roles: ["admin"] },
     { label: "Account Security", href: "/account/security", icon: Lock, roles: ["patient", "doctor", "researcher", "insurance_analyst", "admin"] },

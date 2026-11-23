@@ -216,7 +216,7 @@ async def test_patient_names_are_encrypted_searchable_and_care_role_only(client)
     headers = await _admin(client)
     created = await client.post("/api/v1/patients", headers=headers, json={
         "display_code": f"PT-NAME-{uuid.uuid4().hex[:5]}", "date_of_birth": "1990-03-03", "sex": "F",
-        "given_name": "Jane", "family_name": "Doé",
+        "given_name": "Jane", "family_name": "Doé", "identifier_system": "MAMC",
     })
     assert created.status_code == 200, created.text
     patient_id = created.json()["id"]

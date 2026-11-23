@@ -127,7 +127,8 @@ async def test_patient_clinical_onboarding_and_break_glass(client):
     pt_res = await client.post("/api/v1/patients", json={
         "display_code": "PT-EMERGENCY-01",
         "date_of_birth": "1992-09-15",
-        "sex": "M"
+        "sex": "M",
+        "identifier_system": "MAMC",
     }, headers=headers)
     assert pt_res.status_code == 200
     pt_id = pt_res.json()["id"]
@@ -200,7 +201,7 @@ async def test_break_glass_grant_is_honored_and_reviewable(client):
 
     # A patient with no relationship to the demo doctor.
     pt_id = (await client.post("/api/v1/patients", json={
-        "display_code": "PT-ER-UNASSIGNED", "date_of_birth": "1980-02-02", "sex": "F",
+        "display_code": "PT-ER-UNASSIGNED", "date_of_birth": "1980-02-02", "sex": "F", "identifier_system": "MAMC",
     }, headers=admin_headers)).json()["id"]
 
     denied = await client.get(f"/api/v1/patients/{pt_id}", headers=doctor_headers)
@@ -227,13 +228,34 @@ async def test_break_glass_grant_is_honored_and_reviewable(client):
 
 
 @pytest.mark.asyncio
-async def test_doctor_onboarding_joins_care_team(client):
+async def test_only_admins_register_patients_and_primary_doctor_sees_them(client):
     doctor_auth = (await client.post("/api/v1/auth/demo-switch?role=doctor")).json()
     doctor_headers = {"Authorization": f"Bearer {doctor_auth['access_token']}"}
-    created = await client.post("/api/v1/patients", json={
-        "display_code": "PT-DOC-ONBOARD-1", "date_of_birth": "1991-05-05", "sex": "M",
-    }, headers=doctor_headers)
-    assert created.status_code == 200
-    # Previously the onboarding doctor was denied access to the chart they had just created.
-    assert (await client.get(f"/api/v1/patients/{created.json()['id']}", headers=doctor_headers)).status_code == 200
+    admin_auth = (await client.post("/api/v1/auth/demo-switch?role=admin")).json()
+    admin_headers = {"Authorization": f"Bearer {admin_auth['access_token']}"}
+    payload = {"display_code": "PT-REG-0001", "date_of_birth": "1991-05-05", "sex": "M",
+               "given_name": "Ravi", "family_name": "Kumar"}
+
+    assert (await client.post("/api/v1/patients", json=payload, headers=doctor_headers)).status_code == 403
+    # Registration needs the issuing hospital (its facility code is the MRN authority).
+    assert (await client.post("/api/v1/patients", json=payload, headers=admin_headers)).status_code == 422
+
+    hospitals = (await client.get("/api/v1/admin/hospitals", headers=admin_headers)).json()
+    doctors = (await client.get("/api/v1/doctors", headers=admin_headers)).json()
+    created = await client.post("/api/v1/patients", headers=admin_headers, json={
+        **payload, "hospital_id": hospitals[0]["id"], "primary_doctor_id": doctors[0]["id"]})
+    assert created.status_code == 200, created.text
+    patient_id = created.json()["id"]
+    assert created.json()["display_name"] == "KUMAR, Ravi"
+
+    # The new patient is immediately in the primary doctor's list and chart.
+    assert any(p["id"] == patient_id for p in (await client.get("/api/v1/patients", headers=doctor_headers)).json())
+    timeline = (await client.get(f"/api/v1/patients/{patient_id}/timeline", headers=doctor_headers)).json()
+    assert timeline["care_team"][0]["relationship_type"] == "PRIMARY_CARE"
+    # Server-side search by MRN fragment and by family name.
+    assert any(p["id"] == patient_id for p in (await client.get("/api/v1/patients?q=REG-00", headers=admin_headers)).json())
+    assert any(p["id"] == patient_id for p in (await client.get("/api/v1/patients?q=kumar", headers=admin_headers)).json())
+    # Duplicate MRNs are refused.
+    duplicate = await client.post("/api/v1/patients", headers=admin_headers, json={**payload, "hospital_id": hospitals[0]["id"]})
+    assert duplicate.status_code == 409
 

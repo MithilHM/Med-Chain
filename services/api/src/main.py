@@ -117,11 +117,12 @@ from src.routers.fhir import router as fhir_router
 from src.routers.integration import router as integration_router
 from src.routers.events import router as events_router
 from src.routers.scim import router as scim_router
+from src.routers.users import router as users_router
 
 for router in (
     auth_router, patients_router, clinical_router, documents_router, insurance_router, consent_router,
     research_router, integrity_router, graph_router, cohorts_router, audit_router, blockchain_router,
-    admin_router, fhir_router, integration_router, events_router, scim_router,
+    admin_router, fhir_router, integration_router, events_router, scim_router, users_router,
 ):
     app.include_router(router, prefix="/api/v1")
 

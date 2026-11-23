@@ -248,6 +248,16 @@ All seeded demo accounts share the password: **`Password123!`**
 
 In local demo mode, the header role switcher can change demo personas. Regular accounts sign in with their own credentials and do not get the demo role switcher.
 
+### How accounts are created
+
+There is no open sign-up, because every account must be tied to an identity the hospital verified:
+
+- **Patients**: an administrator registers the patient (**Patient Records → Register Patient**) and ticks *Issue a patient-portal activation code*. The patient opens **/signup**, enters the code, their email, their date of birth, and a password, and the account is linked to their record.
+- **Staff**: an administrator creates the account in **Users & Hospitals** and gives the person the one-time activation link; they choose their password at **/signup**. With hospital SSO enabled, staff can instead sign in through the identity provider.
+- **Forgotten passwords**: an administrator issues a reset link from **Users & Hospitals**.
+
+Only administrators register patients. A primary doctor chosen at registration (or added later under **Care team**) sees the patient immediately, and can record encounters, diagnoses, prescriptions, lab results, and allergies.
+
 ---
 
 ## Detailed Documentation Links

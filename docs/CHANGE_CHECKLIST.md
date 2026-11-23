@@ -81,6 +81,17 @@ For the prioritized static audit, confirmed risks, and optional improvements, se
 - [x] Frontend: SSO and MFA sign-in, the Account Security page, the Operations console, patient names in charts.
 - [x] Docs: [OPERATIONS.md](OPERATIONS.md) runbook; updated integration, readiness, security, and architecture docs.
 
+### 2026-11-23: sign-up, patient administration, and clinical entry
+
+- [x] Patient-portal sign-up with a one-time activation code issued at registration plus date-of-birth check; codes are hashed, expire, and lock after 5 failures.
+- [x] Staff accounts created by administrators with one-time activation links; password-reset links, MFA reset, role changes, and deactivation (sessions revoked); change-password for signed-in users; a password policy.
+- [x] Patient registration restricted to administrators, with name, registering hospital (MRN authority), primary doctor, and optional portal code. New patients now appear in the primary doctor's list.
+- [x] Care-team management, audited demographic corrections, and server-side search by MRN fragment or family name.
+- [x] Clinical data entry: encounters that work for brand-new patients (previously the UI sent placeholder doctor/hospital IDs), diagnoses, prescriptions, lab results with automatic abnormal flags, discharge, and an allergy list.
+- [x] Hospital directory and doctor directory endpoints; Users & Hospitals admin page; sign-up page.
+- [x] Fixed chart display bugs: hardcoded facility name, `Ref: undefined` on labs, `undefined` in the break-glass confirmation, and the patient search ignoring names.
+- [x] Migration `004`.
+
 ## Essential work still pending (requires the hospital)
 
 - [ ] Register MedChain in the hospital IdP, map directory groups, and connect SCIM.

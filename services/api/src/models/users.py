@@ -122,6 +122,10 @@ class Patient(BaseModel):
             return None
 
     @property
+    def has_portal_account(self) -> bool:
+        return self.user_id is not None
+
+    @property
     def display_name(self) -> str | None:
         parts = self.name_parts
         if not parts:
