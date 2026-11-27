@@ -59,23 +59,23 @@ export default function DbmsShowcasePage() {
     <div className="space-y-7 animate-in fade-in duration-200">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Link href="/admin" className="mb-3 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-cyan-300">
+          <Link href="/admin" className="mb-3 inline-flex items-center gap-1 text-xs text-slate-600 hover:text-brand-700">
             <ArrowLeft className="h-3.5 w-3.5" /> System administration
           </Link>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
-            <Database className="h-6 w-6 text-cyan-400" /> Relational DBMS Showcase
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
+            <Database className="h-6 w-6 text-brand-600" /> Database console
           </h1>
-          <p className="mt-1 text-xs text-slate-400">Run fixed, read only examples against the configured relational database.</p>
+          <p className="mt-1 text-sm text-slate-600">Run fixed, read only examples against the configured relational database.</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-300">
+        <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-700">
           <ShieldCheck className="h-4 w-4" /> Admin only · fixed query set · no patient identifiers in results
         </div>
       </div>
 
-      {error && <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-200">{error}</div>}
+      {error && <div role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-xs text-rose-800">{error}</div>}
 
       {loadingCatalog ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 text-sm text-slate-400">Loading query catalog…</div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">Loading query catalog…</div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
           <section className="space-y-2">
@@ -84,39 +84,39 @@ export default function DbmsShowcasePage() {
                 key={query.id}
                 onClick={() => runQuery(query.id)}
                 disabled={running}
-                className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedId === query.id ? "border-cyan-500/40 bg-cyan-500/10" : "border-slate-800 bg-slate-900/50 hover:border-slate-700"}`}
+                className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedId === query.id ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
               >
-                <span className="flex items-center justify-between gap-2 text-xs font-semibold text-white">
-                  {query.title}<Play className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
+                <span className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-900">
+                  {query.title}<Play className="h-3.5 w-3.5 shrink-0 text-brand-700" />
                 </span>
-                <span className="mt-2 block text-[11px] leading-relaxed text-slate-400">{query.description}</span>
+                <span className="mt-2 block text-[11px] leading-relaxed text-slate-600">{query.description}</span>
               </button>
             ))}
-            {!queries.length && <p className="rounded-xl border border-slate-800 p-4 text-xs text-slate-400">No showcase queries are available.</p>}
+            {!queries.length && <p className="rounded-xl border border-slate-200 p-4 text-xs text-slate-600">No showcase queries are available.</p>}
           </section>
 
           <section className="min-w-0 space-y-4">
-            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-                <h2 className="text-xs font-semibold text-white">{result?.title ?? selectedQuery?.title ?? "Query"}</h2>
-                {result && <span className="text-[10px] font-mono text-slate-400">{result.dialect} · {result.row_count} rows</span>}
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <h2 className="text-xs font-semibold text-slate-900">{result?.title ?? selectedQuery?.title ?? "Query"}</h2>
+                {result && <span className="text-[10px] font-mono text-slate-600">{result.dialect} · {result.row_count} rows</span>}
               </div>
-              <pre className="max-h-72 overflow-auto p-4 text-[11px] leading-relaxed text-cyan-100"><code>{result?.sql ?? "Choose a query to view its SQL and results."}</code></pre>
+              <pre className="max-h-72 overflow-auto p-4 text-[11px] leading-relaxed text-brand-800"><code>{result?.sql ?? "Choose a query to view its SQL and results."}</code></pre>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50">
-              <div className="border-b border-slate-800 px-4 py-3 text-xs font-semibold text-white">Query results</div>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <div className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-900">Query results</div>
               {running ? (
-                <p className="p-5 text-xs text-slate-400">Executing read only query…</p>
+                <p className="p-5 text-xs text-slate-600">Executing read only query…</p>
               ) : result?.rows.length ? (
                 <div className="max-h-[28rem] overflow-auto">
                   <table className="w-full text-left text-[11px]">
-                    <thead className="sticky top-0 bg-slate-950 text-slate-400">
+                    <thead className="sticky top-0 bg-white text-slate-600">
                       <tr>{result.columns.map((column) => <th key={column} className="whitespace-nowrap px-4 py-3 font-semibold">{column}</th>)}</tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-800/80">
+                    <tbody className="divide-y divide-slate-200">
                       {result.rows.map((row, index) => (
-                        <tr key={index} className="text-slate-200">
+                        <tr key={index} className="text-slate-800">
                           {result.columns.map((column) => <td key={column} className="whitespace-nowrap px-4 py-3 font-mono">{String(row[column] ?? "—")}</td>)}
                         </tr>
                       ))}
@@ -124,9 +124,9 @@ export default function DbmsShowcasePage() {
                   </table>
                 </div>
               ) : (
-                <p className="p-5 text-xs text-slate-400">{result ? "No rows met the query criteria." : "Run a query to see its result."}</p>
+                <p className="p-5 text-xs text-slate-600">{result ? "No rows met the query criteria. Groups with fewer than five patients are hidden, so small datasets (such as the demo seed's claims, which cover one patient) can return nothing." : "Run a query to see its result."}</p>
               )}
-              {result && <p className="border-t border-slate-800 px-4 py-3 text-[10px] text-slate-500">{result.disclaimer}</p>}
+              {result && <p className="border-t border-slate-200 px-4 py-3 text-[10px] text-slate-500">{result.disclaimer}</p>}
             </div>
           </section>
         </div>

@@ -5,18 +5,54 @@ import Link from "next/link";
 import { ApiClient } from "@/lib/api";
 import LiveClinicalFeed from "@/components/LiveClinicalFeed";
 import {
-  Users,
-  FileCheck2,
-  KeyRound,
-  Network,
-  FlaskConical,
   AlertTriangle,
   ArrowRight,
-  ShieldCheck,
-  Database,
+  CheckCircle2,
+  FileCheck2,
+  FileText,
+  FlaskConical,
+  KeyRound,
   Layers,
-  Sparkles
+  Network,
+  Receipt,
+  ScrollText,
+  ServerCog,
+  UserCog,
+  UserPlus,
+  Users,
 } from "lucide-react";
+
+type Tile = {
+  title: string;
+  value: string | number;
+  sub: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: string;
+  href: string;
+  roles: string[];
+};
+
+type Action = { label: string; text: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
+
+const ACTIONS: Action[] = [
+  { label: "Register a patient", text: "Create a record and issue a portal activation code", href: "/patients", icon: UserPlus, roles: ["admin"] },
+  { label: "Open patient list", text: "Charts, encounters, results, and care teams", href: "/patients", icon: Users, roles: ["doctor"] },
+  { label: "View my health record", text: "Visits, diagnoses, prescriptions, and lab results", href: "/patients", icon: Users, roles: ["patient"] },
+  { label: "Write a clinical note", text: "Encrypted notes linked to an encounter", href: "/documents", icon: FileText, roles: ["doctor"] },
+  { label: "Manage research consent", text: "Grant or withdraw access to your data", href: "/consent", icon: KeyRound, roles: ["patient"] },
+  { label: "See who viewed my record", text: "Every access is logged", href: "/audit", icon: ScrollText, roles: ["patient"] },
+  { label: "Run a consented query", text: "Aggregate results with small-cell suppression", href: "/research", icon: FlaskConical, roles: ["researcher"] },
+  { label: "Explore cohorts", text: "Consent-scoped patient groups", href: "/cohorts", icon: Layers, roles: ["researcher"] },
+  { label: "Review flagged claims", text: "Explainable anomaly rules", href: "/insurance", icon: Receipt, roles: ["insurance_analyst"] },
+  { label: "Manage staff accounts", text: "Activation links, roles, and MFA resets", href: "/admin/users", icon: UserCog, roles: ["admin"] },
+  { label: "Verify record integrity", text: "Check documents against their ledger commitments", href: "/integrity", icon: FileCheck2, roles: ["doctor", "admin"] },
+  { label: "Check system health", text: "Databases, ledger, integrations, and alerts", href: "/admin", icon: ServerCog, roles: ["admin"] },
+];
+
+function greeting() {
+  const hour = new Date().getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
@@ -29,6 +65,7 @@ export default function DashboardPage() {
     cohorts: null as number | null,
   });
   const [role, setRole] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [health, setHealth] = useState<any>(null);
 
@@ -37,6 +74,7 @@ export default function DashboardPage() {
       try {
         const user = JSON.parse(window.localStorage.getItem("medchain_user") || "null");
         setRole(typeof user?.role === "string" ? user.role : null);
+        setEmail(typeof user?.email === "string" ? user.email : "");
       } catch {
         setRole(null);
       }
@@ -110,229 +148,141 @@ export default function DashboardPage() {
     return () => { active = false; };
   }, [role]);
 
-  const metricCards = [
+  const show = (value: number | null) => (loading ? "…" : value ?? "—");
+
+  const tiles: Tile[] = [
     {
-      title: role === "patient" ? "My Patient Record" : role === "doctor" ? "Assigned Patients" : "Synthetic Patients",
-      value: loading ? "..." : stats.patients ?? "N/A",
-      sub: "Relational ACID Store",
-      icon: Users,
-      color: "from-blue-500/20 to-cyan-500/10 text-cyan-400 border-cyan-500/30",
-      href: "/patients",
-      roles: ["patient", "doctor", "admin"],
+      title: role === "patient" ? "My records" : role === "doctor" ? "Patients in my care" : "Registered patients",
+      value: show(stats.patients),
+      sub: role === "doctor" ? "Active care-team assignments" : "Patient charts",
+      icon: Users, tone: "bg-brand-50 text-brand-700", href: "/patients", roles: ["patient", "doctor", "admin"],
     },
     {
-      title: "Active Consents",
-      value: loading ? "..." : stats.consents ?? "N/A",
-      sub: "Patient-Governed Scope",
-      icon: KeyRound,
-      color: "from-purple-500/20 to-indigo-500/10 text-purple-400 border-purple-500/30",
-      href: "/consent",
-      roles: ["patient", "admin"],
+      title: "Active consents", value: show(stats.consents), sub: "Granted and in date",
+      icon: KeyRound, tone: "bg-violet-50 text-violet-700", href: "/consent", roles: ["patient", "admin"],
     },
     {
-      title: "Integrity Commitments",
-      value: loading ? "..." : stats.documents ?? "N/A",
-      sub: "Off-chain salted SHA-256 hashes",
-      icon: FileCheck2,
-      color: "from-emerald-500/20 to-teal-500/10 text-emerald-400 border-emerald-500/30",
-      href: "/integrity",
-      roles: ["patient", "doctor", "admin"],
+      title: "Verified documents", value: show(stats.documents), sub: "With an integrity commitment",
+      icon: FileCheck2, tone: "bg-emerald-50 text-emerald-700", href: "/integrity", roles: ["patient", "doctor", "admin"],
     },
     {
-      title: "Graph Projections",
-      value: loading ? "..." : stats.graphEdges === null ? "N/A" : `${stats.graphEdges} Edges`,
-      sub: role === "researcher" ? "Consent scoped relationships" : "Neo4j Derived Knowledge",
-      icon: Network,
-      color: "from-sky-500/20 to-blue-500/10 text-sky-400 border-sky-500/30",
-      href: "/graph",
-      roles: ["doctor", "researcher", "admin"],
+      title: "Graph relationships", value: show(stats.graphEdges),
+      sub: role === "researcher" ? "Within your consented scope" : "Disease and drug links",
+      icon: Network, tone: "bg-sky-50 text-sky-700", href: "/graph", roles: ["doctor", "researcher", "admin"],
     },
     {
-      title: "Claims For Review",
-      value: loading ? "..." : stats.flaggedClaims ?? "N/A",
-      sub: "Explainable Anomaly Rules",
-      icon: AlertTriangle,
-      color: "from-amber-500/20 to-orange-500/10 text-amber-400 border-amber-500/30",
-      href: "/insurance",
-      roles: ["insurance_analyst", "admin"],
+      title: "Claims for review", value: show(stats.flaggedClaims), sub: "Flagged by anomaly rules",
+      icon: AlertTriangle, tone: "bg-amber-50 text-amber-700", href: "/insurance", roles: ["insurance_analyst", "admin"],
     },
     {
-      title: "Research Projects",
-      value: loading ? "..." : stats.researchProjects ?? "N/A",
-      sub: "Projects you manage",
-      icon: FlaskConical,
-      color: "from-fuchsia-500/20 to-purple-500/10 text-fuchsia-400 border-fuchsia-500/30",
-      href: "/research",
-      roles: ["researcher", "admin"],
+      title: "Research projects", value: show(stats.researchProjects), sub: "Projects you manage",
+      icon: FlaskConical, tone: "bg-violet-50 text-violet-700", href: "/research", roles: ["researcher", "admin"],
     },
     {
-      title: "Consented Cohorts",
-      value: loading ? "..." : stats.cohorts ?? "N/A",
-      sub: "Current project scope",
-      icon: Layers,
-      color: "from-teal-500/20 to-emerald-500/10 text-teal-400 border-teal-500/30",
-      href: "/cohorts",
-      roles: ["researcher", "admin"],
+      title: "Consented cohorts", value: show(stats.cohorts), sub: "In the current project",
+      icon: Layers, tone: "bg-teal-50 text-teal-700", href: "/cohorts", roles: ["researcher", "admin"],
     },
   ];
-  const visibleMetricCards = metricCards.filter((card) => role && card.roles.includes(role));
+  const visibleTiles = tiles.filter((tile) => role && tile.roles.includes(role));
+  const visibleActions = ACTIONS.filter((action) => role && action.roles.includes(role));
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const healthy = health?.status === "healthy";
+  const healthPill = `inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium border ${
+    healthy ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800"}`;
+  const healthContent = (
+    <>
+      {healthy ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+      {healthy ? "All services operational" : "Some services degraded"}
+    </>
+  );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
-      {/* Hero Banner */}
-      <div className="relative overflow-hidden rounded-2xl glass-panel p-8 border border-slate-800">
-        <div className="absolute -right-12 -top-12 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="relative z-10 max-w-3xl space-y-3">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-semibold">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>End-to-End Database Engineering & Healthcare Privacy Platform</span>
-          </div>
-          <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-white">
-            Privacy-Preserving <span className="gradient-text">Healthcare Intelligence</span> & Ledger Audit
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm text-slate-500">{today}</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            {greeting()}{email ? `, ${email.split("@")[0]}` : ""}
           </h1>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            Multi-model database architecture integrating an authoritative PostgreSQL relational core, 
-            semi-structured clinical documents in MongoDB, derived disease-drug graph projections in Neo4j, 
-            and a Solidity smart contract for tamper-evident consent commitments.
+          <p className="text-sm text-slate-600 mt-1">
+            {role === "patient" && "A summary of your health record and who can see it."}
+            {role === "doctor" && "An overview of the patients in your care."}
+            {role === "researcher" && "Your consented research workspace."}
+            {role === "insurance_analyst" && "Claims activity for your insurance provider."}
+            {role === "admin" && "Hospital administration overview."}
           </p>
         </div>
+        {role === "admin" && health && !healthy && (
+          <Link href="/admin" className={healthPill}>{healthContent}</Link>
+        )}
       </div>
 
-      {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {visibleMetricCards.map((card) => {
-          const Icon = card.icon;
+        {visibleTiles.map((tile) => {
+          const Icon = tile.icon;
           return (
-            <Link
-              key={card.title}
-              href={card.href}
-              className={`p-5 rounded-2xl border glass-card bg-gradient-to-br ${card.color} flex flex-col justify-between`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-300">{card.title}</span>
-                <Icon className="w-5 h-5 opacity-80" />
+            <Link key={tile.title} href={tile.href}
+              className="bg-white rounded-lg border border-slate-200 shadow-card p-5 hover:border-brand-300 hover:shadow-md transition">
+              <div className="flex items-start justify-between">
+                <span className="text-sm font-medium text-slate-600">{tile.title}</span>
+                <span className={`w-9 h-9 rounded-lg flex items-center justify-center ${tile.tone}`}>
+                  <Icon className="w-[18px] h-[18px]" />
+                </span>
               </div>
-              <div className="mt-4">
-                <div className="text-2xl font-bold tracking-tight text-white">{card.value}</div>
-                <div className="text-[11px] text-slate-400 mt-1">{card.sub}</div>
-              </div>
+              <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{tile.value}</div>
+              <div className="mt-1 text-xs text-slate-500">{tile.sub}</div>
             </Link>
           );
         })}
       </div>
 
-      {/* Real-time clinical events (care roles only; enforced by the API) */}
-      {role && ["doctor", "patient", "admin"].includes(role) && <LiveClinicalFeed />}
-
-      {/* Multi-Store Architectural Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <h2 className="text-base font-bold text-white flex items-center space-x-2">
-              <Database className="w-4 h-4 text-cyan-400" />
-              <span>Multi-Store Architecture & Data Ownership</span>
-            </h2>
-            <span className="text-xs text-slate-400 font-mono">Source-of-Truth Hierarchy</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-cyan-300">1. PostgreSQL Relational Core</span>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Authoritative</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Source of truth for normalized patients, visits, diagnoses, prescriptions, insurance claims, and active consent records.
-              </p>
+        <div className="lg:col-span-2">
+          {role && ["doctor", "patient", "admin"].includes(role) ? (
+            <LiveClinicalFeed />
+          ) : (
+            <div className="bg-white rounded-lg border border-slate-200 shadow-card p-6">
+              <h2 className="text-base font-semibold text-slate-900">How your access works</h2>
+              <ul className="mt-3 space-y-2 text-sm text-slate-600 list-disc pl-5">
+                {role === "researcher" ? (
+                  <>
+                    <li>You only see data from patients who consented to your project.</li>
+                    <li>Groups smaller than the minimum cohort size are suppressed.</li>
+                    <li>Every query is recorded in the audit log.</li>
+                  </>
+                ) : (
+                  <>
+                    <li>You see claims for your assigned insurance provider only.</li>
+                    <li>Flagged claims list the rule that triggered them.</li>
+                    <li>Every review action is recorded in the audit log.</li>
+                  </>
+                )}
+              </ul>
             </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-emerald-300">2. MongoDB Document Store</span>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Semi-Structured</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Stores unstructured clinical narratives, physician notes, and diagnostic observations. Relational metadata links by UUID.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-sky-300">3. Neo4j Graph Intelligence</span>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/20">Derived Projection</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                100% rebuildable knowledge graph exploring disease co-occurrences and medication-to-adverse-event associations.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-purple-300">4. Hardhat EVM Contract</span>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20">Audit Trail</span>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Append-only ledger anchoring salted SHA-256 commitments and consent grant/revocation events. Raw medical data and direct identifiers stay off-chain; opaque hashes are used for references.
-              </p>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Capstone Demonstration Workflows */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <div className="border-b border-slate-800/80 pb-3">
-            <h2 className="text-base font-bold text-white flex items-center space-x-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Interactive Demonstration</span>
-            </h2>
-            <p className="text-xs text-slate-400">Step-by-step presentation pathways</p>
+        <div className="bg-white rounded-lg border border-slate-200 shadow-card self-start">
+          <div className="px-5 py-4 border-b border-slate-200">
+            <h2 className="text-base font-semibold text-slate-900">Quick actions</h2>
           </div>
-
-          <div className="space-y-2.5">
-            {role && ["patient", "admin"].includes(role) && <Link
-              href="/consent"
-              className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-cyan-500/40 flex items-center justify-between transition-all group"
-            >
-              <div>
-                <div className="text-xs font-semibold text-slate-200 group-hover:text-cyan-300">1. Consent Grant & Revocation</div>
-                <div className="text-[11px] text-slate-400">Patient grants or revokes research access</div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 group-hover:translate-x-1 transition-all" />
-            </Link>}
-
-            {role && ["researcher", "admin"].includes(role) && <Link
-              href="/research"
-              className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-purple-500/40 flex items-center justify-between transition-all group"
-            >
-              <div>
-                <div className="text-xs font-semibold text-slate-200 group-hover:text-purple-300">2. Research Query Engine</div>
-                <div className="text-[11px] text-slate-400">Consent-gated queries with instant 403 denial</div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-purple-400 group-hover:translate-x-1 transition-all" />
-            </Link>}
-
-            {role && ["patient", "doctor", "admin"].includes(role) && <Link
-              href="/integrity"
-              className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-emerald-500/40 flex items-center justify-between transition-all group"
-            >
-              <div>
-                <div className="text-xs font-semibold text-slate-200 group-hover:text-emerald-300">3. Cryptographic Verification</div>
-                <div className="text-[11px] text-slate-400">Salted hash matching & tamper detection</div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all" />
-            </Link>}
-
-            {role && ["insurance_analyst", "admin"].includes(role) && <Link
-              href="/insurance"
-              className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/80 hover:border-amber-500/40 flex items-center justify-between transition-all group"
-            >
-              <div>
-                <div className="text-xs font-semibold text-slate-200 group-hover:text-amber-300">4. Anomaly Review Queue</div>
-                <div className="text-[11px] text-slate-400">Explainable duplicate billing detection</div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-amber-400 group-hover:translate-x-1 transition-all" />
-            </Link>}
-          </div>
+          <ul className="divide-y divide-slate-100">
+            {visibleActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <li key={action.label}>
+                  <Link href={action.href} className="group flex items-center gap-3 px-5 py-3 hover:bg-slate-50">
+                    <Icon className="w-[18px] h-[18px] text-brand-600 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-slate-900 group-hover:text-brand-700">{action.label}</span>
+                      <span className="block text-xs text-slate-500 truncate">{action.text}</span>
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-brand-600" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </div>
     </div>

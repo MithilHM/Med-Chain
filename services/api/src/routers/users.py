@@ -185,6 +185,9 @@ async def issue_password_reset(
     user = await db.get(AppUser, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    if user.id == current_user.id:
+        # A reset revokes every session, so issuing one for yourself signs you out mid-task.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Change your own password under Account security.")
     if user.auth_source != "LOCAL":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SSO account passwords are reset in the hospital identity provider.")
     purpose = "STAFF_ACTIVATION" if user.password_hash.startswith(PENDING_PASSWORD_PREFIX) else "PASSWORD_RESET"

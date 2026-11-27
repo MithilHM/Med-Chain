@@ -86,6 +86,9 @@ services:
       MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-medchain}:${MONGO_ROOT_PASSWORD:-medchain_mongo_pass}@mongodb:27017/?authSource=admin
       NEO4J_URI: bolt://neo4j:7687
       BLOCKCHAIN_RPC_URL: http://hardhat:8545
+      # Trust X-Forwarded-For from the web container so sign-in limits apply per user, not per proxy.
+      # Safe here only because this port is bound to localhost; see docs/OPERATIONS.md for real deployments.
+      FORWARDED_ALLOW_IPS: "*"
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

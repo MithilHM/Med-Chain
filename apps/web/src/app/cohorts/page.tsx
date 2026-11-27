@@ -81,38 +81,38 @@ export default function CohortsPage() {
     }
   };
 
-  const colors = ["border-cyan-500/50 bg-cyan-950/20 text-cyan-300", "border-purple-500/50 bg-purple-950/20 text-purple-300", "border-emerald-500/50 bg-emerald-950/20 text-emerald-300", "border-amber-500/50 bg-amber-950/20 text-amber-300"];
+  const colors = ["border-brand-400 bg-brand-50 text-brand-700", "border-purple-400 bg-purple-50 text-purple-700", "border-emerald-400 bg-emerald-50 text-emerald-700", "border-amber-400 bg-amber-50 text-amber-700"];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       <div>
-        <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
-          <Network className="w-6 h-6 text-cyan-400" />
-          <span>Patient Cohort Analytics Explorer</span>
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center space-x-2.5">
+          <Network className="w-6 h-6 text-brand-600" />
+          <span>Cohort explorer</span>
         </h1>
-        <p className="text-xs text-slate-400">
-          Unsupervised K-Means clustering on de-identified synthetic feature matrices. Zero direct identifiers.
+        <p className="mt-1 text-sm text-slate-600">
+          Groups of similar consented patients, built from de-identified data with no direct identifiers.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Clustering Configuration Form */}
-        <div className="lg:col-span-4 glass-panel p-6 rounded-2xl border border-slate-800 space-y-5">
-          <div className="border-b border-slate-800/80 pb-3">
-            <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
+        <div className="lg:col-span-4 glass-panel p-6 rounded-xl border border-slate-200 space-y-5">
+          <div className="border-b border-slate-200 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-brand-700" />
               <span>Configure Clustering Run</span>
             </h2>
           </div>
 
           <form onSubmit={handleRunClustering} className="space-y-4 text-xs">
             <div>
-              <label className="block text-slate-300 font-medium mb-1">Research Project (consent scope)</label>
+              <label className="block text-slate-700 font-medium mb-1">Research Project (consent scope)</label>
               <select
                 required
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:border-brand-500"
               >
                 <option value="" disabled>Select a project</option>
                 {researchProjects.map((project) => (
@@ -120,23 +120,23 @@ export default function CohortsPage() {
                 ))}
               </select>
               {researchProjects.length === 0 && (
-                <p className="mt-1 text-amber-300">Create a research project and obtain active cohort consent first.</p>
+                <p className="mt-1 text-amber-700">Create a research project and obtain active cohort consent first.</p>
               )}
             </div>
 
             <div>
-              <label className="block text-slate-300 font-medium mb-1">Cohort Run Name</label>
+              <label className="block text-slate-700 font-medium mb-1">Cohort Run Name</label>
               <input
                 type="text"
                 required
                 value={cohortName}
                 onChange={(e) => setCohortName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:border-brand-500"
               />
             </div>
 
             <div>
-              <label className="block text-slate-300 font-medium mb-1">
+              <label className="block text-slate-700 font-medium mb-1">
                 Number of Clusters ($k = {k}$)
               </label>
               <input
@@ -145,9 +145,9 @@ export default function CohortsPage() {
                 max="5"
                 value={k}
                 onChange={(e) => setK(Number(e.target.value))}
-                className="w-full accent-cyan-400 cursor-pointer"
+                className="w-full accent-brand-700 cursor-pointer"
               />
-              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+              <div className="flex justify-between text-[10px] text-slate-600 mt-1">
                 <span>2 Groups</span>
                 <span>3 Groups</span>
                 <span>4 Groups</span>
@@ -156,27 +156,27 @@ export default function CohortsPage() {
             </div>
 
             <div>
-              <label className="block text-slate-300 font-medium mb-1">
+              <label className="block text-slate-700 font-medium mb-1">
                 Random Seed (Reproducibility: {seed})
               </label>
               <input
                 type="number"
                 value={seed}
                 onChange={(e) => setSeed(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:border-brand-500 font-mono"
               />
             </div>
 
             <div>
-              <label className="block text-slate-300 font-medium mb-1">Active Feature Groups</label>
-              <div className="space-y-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <label className="block text-slate-700 font-medium mb-1">Active Feature Groups</label>
+              <div className="space-y-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
                 {[
                   { id: "diagnoses", label: "Diagnosis Code Frequencies" },
                   { id: "medications", label: "Prescription Exposure Counts" },
                   { id: "lab_abnormalities", label: "Abnormal Lab Assays Count" },
                   { id: "age_bracket", label: "Synthetic Demographic Band" },
                 ].map((f) => (
-                  <label key={f.id} className="flex items-center space-x-2 text-slate-300">
+                  <label key={f.id} className="flex items-center space-x-2 text-slate-700">
                     <input
                       type="checkbox"
                       checked={selectedFeatures.includes(f.id)}
@@ -185,7 +185,7 @@ export default function CohortsPage() {
                         if (e.target.checked) setSelectedFeatures([...selectedFeatures, f.id]);
                         else setSelectedFeatures(selectedFeatures.filter((item) => item !== f.id));
                       }}
-                      className="rounded border-slate-700 text-cyan-500 focus:ring-0 disabled:opacity-50"
+                      className="rounded border-slate-300 text-brand-600 focus:ring-0 disabled:opacity-50"
                     />
                     <span>{f.label}</span>
                   </label>
@@ -197,7 +197,7 @@ export default function CohortsPage() {
             <button
               type="submit"
               disabled={running}
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg bg-brand-700 hover:bg-brand-600 text-white font-semibold shadow-sm transition-all"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>{running ? "Standardizing & Clustering..." : "Execute K-Means Clustering"}</span>
@@ -206,8 +206,8 @@ export default function CohortsPage() {
 
           {/* Past Cohorts List */}
           {cohorts.length > 0 && (
-            <div className="pt-4 border-t border-slate-800/80 space-y-2">
-              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            <div className="pt-4 border-t border-slate-200 space-y-2">
+              <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
                 Saved Analytics Runs ({cohorts.length})
               </div>
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
@@ -217,12 +217,12 @@ export default function CohortsPage() {
                     onClick={() => setCurrentCohort(c)}
                     className={`w-full p-2.5 rounded-lg border text-left text-xs transition-colors flex items-center justify-between ${
                       currentCohort?.id === c.id
-                        ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-300 font-semibold"
-                        : "bg-slate-900/40 border-slate-800 text-slate-400 hover:text-white"
+                        ? "bg-brand-50 border-brand-300 text-brand-700 font-semibold"
+                        : "bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     <span className="truncate">{c.name}</span>
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-slate-600">
                       {new Date(c.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </button>
@@ -235,17 +235,17 @@ export default function CohortsPage() {
         {/* Right Column: Cluster Visualizations and Explanations */}
         <div className="lg:col-span-8 space-y-6">
           {!currentCohort ? (
-            <div className="glass-panel p-16 rounded-2xl border border-slate-800 text-center text-xs text-slate-400">
+            <div className="glass-panel p-16 rounded-xl border border-slate-200 text-center text-xs text-slate-600">
               Run clustering on the left to generate and inspect synthetic cohorts.
             </div>
           ) : (
             <div className="space-y-6 animate-in fade-in duration-200">
               {/* Header Box */}
-              <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-3">
-                <div className="flex flex-wrap items-center justify-between border-b border-slate-800/80 pb-3 gap-2">
+              <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between border-b border-slate-200 pb-3 gap-2">
                   <div>
-                    <h2 className="text-lg font-bold text-white">{currentCohort.name}</h2>
-                    <div className="text-xs text-slate-400 flex items-center space-x-2 mt-1">
+                    <h2 className="text-lg font-bold text-slate-900">{currentCohort.name}</h2>
+                    <div className="text-xs text-slate-600 flex items-center space-x-2 mt-1">
                       <span>Algorithm: {currentCohort.algorithm}</span>
                       <span>•</span>
                       <span>Inertia: {currentCohort.inertia ? Math.round(currentCohort.inertia) : "N/A"}</span>
@@ -259,13 +259,13 @@ export default function CohortsPage() {
                     </div>
                   )}
 
-                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-brand-50 text-brand-700 border border-brand-200">
                     Deterministic Reproducibility
                   </span>
                 </div>
 
-                <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-800/30 flex items-start space-x-2.5 text-xs text-amber-200/90">
-                  <Info className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start space-x-2.5 text-xs text-amber-800">
+                  <Info className="w-4 h-4 shrink-0 text-amber-700 mt-0.5" />
                   <span>
                     <strong>Scientific Disclaimer:</strong> {currentCohort.disclaimer}
                   </span>
@@ -279,23 +279,23 @@ export default function CohortsPage() {
                   return (
                     <div
                       key={cluster.cluster_label}
-                      className={`p-5 rounded-2xl border glass-panel space-y-3 ${colorClass}`}
+                      className={`p-5 rounded-xl border glass-panel space-y-3 ${colorClass}`}
                     >
-                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                         <span className="text-sm font-bold">{cluster.cluster_name}</span>
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-slate-900/80 border border-slate-800">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-slate-50 border border-slate-200">
                           {cluster.patient_count} Patients
                         </span>
                       </div>
 
                       <div className="space-y-2 text-xs">
-                        <div className="flex items-center justify-between text-slate-300">
-                          <span className="text-slate-400">Age Band Estimate:</span>
+                        <div className="flex items-center justify-between text-slate-700">
+                          <span className="text-slate-600">Age Band Estimate:</span>
                           <span className="font-semibold">{cluster.avg_age == null ? "Not selected" : `${cluster.avg_age} years`}</span>
                         </div>
 
                         <div>
-                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
                             Dominant Diagnoses
                           </div>
                           <div className="flex flex-wrap gap-1">
@@ -303,7 +303,7 @@ export default function CohortsPage() {
                               cluster.top_diagnoses?.length ? cluster.top_diagnoses.map((d: string, dIdx: number) => (
                                 <span
                                   key={dIdx}
-                                  className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-200"
+                                  className="px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-800"
                                 >
                                   {d}
                                 </span>
@@ -313,7 +313,7 @@ export default function CohortsPage() {
                         </div>
 
                         <div>
-                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
                             Associated Prescriptions
                           </div>
                           <div className="flex flex-wrap gap-1">
@@ -321,7 +321,7 @@ export default function CohortsPage() {
                               cluster.top_medications?.length ? cluster.top_medications.map((m: string, mIdx: number) => (
                                 <span
                                   key={mIdx}
-                                  className="px-2 py-0.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-200"
+                                  className="px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-800"
                                 >
                                   {m}
                                 </span>

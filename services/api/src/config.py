@@ -61,7 +61,10 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     SECRET_KEY: str = DEVELOPMENT_SECRET_KEY
+    # Inactivity timeout: an active user's session is refreshed; an idle one ends after this long.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    # Absolute session length (one shift): refreshing stops after this and the user signs in again.
+    SESSION_MAX_HOURS: int = 12
     DOCUMENT_ENCRYPTION_KEY: str = DEVELOPMENT_DOCUMENT_ENCRYPTION_KEY
 
     # PostgreSQL
@@ -231,6 +234,8 @@ class Settings(BaseSettings):
         environment = self.ENVIRONMENT.strip().lower()
         if self.ACCESS_TOKEN_EXPIRE_MINUTES < 1 or self.ACCESS_TOKEN_EXPIRE_MINUTES > 60:
             raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must be between 1 and 60 minutes.")
+        if self.SESSION_MAX_HOURS < 1 or self.SESSION_MAX_HOURS > 24:
+            raise ValueError("SESSION_MAX_HOURS must be between 1 and 24 hours.")
         if self.LOGIN_MAX_FAILED_ATTEMPTS < 1 or self.LOGIN_LOCKOUT_MINUTES < 1:
             raise ValueError("Login lockout settings must be positive.")
         try:

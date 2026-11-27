@@ -10,6 +10,8 @@ async def test_consent_lifecycle_and_instant_revocation(client):
     assert projects_res.status_code == 200
     projects = projects_res.json()
     assert len(projects) > 0
+    # Projects with active consents come first, so the UI's default selection can be queried.
+    assert projects[0]["active_consent_count"] > 0
     # Select the seeded project that has patient consents (never rely on list position).
     project_id = next(p["id"] for p in projects if p["title"].startswith("Type 2 Diabetes"))
 

@@ -88,51 +88,51 @@ export default function ConsentPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       <div>
-        <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
-          <KeyRound className="w-6 h-6 text-purple-400" />
-          <span>Patient Consent Directives &amp; Scope Governance</span>
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center space-x-2.5">
+          <KeyRound className="w-6 h-6 text-brand-600" />
+          <span>Consent & sharing</span>
         </h1>
-        <p className="text-xs text-slate-400">
-          Enforces patient data sovereignty, time-scoped permissions, and tamper-evident blockchain anchors
+        <p className="mt-1 text-sm text-slate-600">
+          Choose which research projects may use your data, for how long, and withdraw at any time.
         </p>
       </div>
 
       {/* Pending Access Requests Section */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+      <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center space-x-2">
-            <Clock className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-bold text-white">Pending Research Access Requests</h2>
+            <Clock className="w-4 h-4 text-amber-700" />
+            <h2 className="text-sm font-bold text-slate-900">Pending Research Access Requests</h2>
           </div>
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
             {pendingRequests.length} Action Needed
           </span>
         </div>
 
         {loading ? (
-          <div className="text-xs text-slate-400 text-center py-6">Checking access requests...</div>
+          <div className="text-xs text-slate-600 text-center py-6">Checking access requests...</div>
         ) : pendingRequests.length === 0 ? (
-          <div className="text-xs text-slate-400 text-center py-6">
+          <div className="text-xs text-slate-600 text-center py-6">
             No pending requests awaiting your decision.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {pendingRequests.map((req) => (
-              <div key={req.id} className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+              <div key={req.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                 <div>
-                  <div className="text-xs font-bold text-white">{req.project_title || "Research Initiative"}</div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">{req.purpose}</div>
+                  <div className="text-xs font-bold text-slate-900">{req.project_title || "Research Initiative"}</div>
+                  <div className="text-[11px] text-slate-600 mt-0.5">{req.purpose}</div>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                  <div className="text-[10px] uppercase font-semibold text-slate-600 tracking-wider">
                     Choose scopes to grant
                   </div>
                   <div className="grid grid-cols-1 gap-1.5">
                     {req.requested_scopes?.map((sc: string) => {
                       const selected = selectedScopes[req.id] ?? req.requested_scopes;
                       return (
-                        <label key={sc} className="flex items-center gap-2 text-[11px] text-slate-300">
+                        <label key={sc} className="flex items-center gap-2 text-[11px] text-slate-700">
                           <input
                             type="checkbox"
                             checked={selected.includes(sc)}
@@ -140,7 +140,7 @@ export default function ConsentPage() {
                               const next = current[req.id] ?? req.requested_scopes;
                               return { ...current, [req.id]: event.target.checked ? [...next, sc] : next.filter((scope: string) => scope !== sc) };
                             })}
-                            className="accent-purple-500"
+                            className="accent-purple-600"
                           />
                           <span className="font-mono">{sc}</span>
                         </label>
@@ -149,30 +149,30 @@ export default function ConsentPage() {
                   </div>
                 </div>
 
-                <label className="flex items-center justify-between text-[11px] text-slate-400">
+                <label className="flex items-center justify-between text-[11px] text-slate-600">
                   Consent duration
                   <select
                     value={validDays[req.id] ?? 30}
                     onChange={(event) => setValidDays((current) => ({ ...current, [req.id]: Number(event.target.value) }))}
-                    className="rounded bg-slate-800 border border-slate-700 px-2 py-1 text-slate-200"
+                    className="rounded bg-slate-100 border border-slate-300 px-2 py-1 text-slate-800"
                   >
                     {[30, 90, 180, 365].map((days) => <option key={days} value={days}>{days} days</option>)}
                   </select>
                 </label>
 
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end space-x-2">
+                <div className="pt-2 border-t border-slate-200 flex items-center justify-end space-x-2">
                   <button
                     onClick={() => handleDecision(req.id, "REJECTED")}
                     disabled={actionLoading === req.id}
-                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-medium active:scale-95 transition-all"
+                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium active:scale-95 transition-all"
                   >
-                    <X className="w-3.5 h-3.5 text-rose-400" />
+                    <X className="w-3.5 h-3.5 text-rose-700" />
                     <span>Reject</span>
                   </button>
                   <button
                     onClick={() => handleDecision(req.id, "APPROVED")}
                     disabled={actionLoading === req.id}
-                    className="flex items-center space-x-1 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium active:scale-95 transition-all shadow-md shadow-emerald-500/20"
+                    className="flex items-center space-x-1 px-3.5 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-600 text-white text-xs font-medium transition-all shadow-sm"
                   >
                     <Check className="w-3.5 h-3.5" />
                     <span>{actionLoading === req.id ? "Anchoring..." : "Grant Consent"}</span>
@@ -185,17 +185,17 @@ export default function ConsentPage() {
       </div>
 
       {/* Active Granted Consents Section */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+      <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center space-x-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-bold text-white">Active Scoped Consents ({activeConsents.length})</h2>
+            <ShieldCheck className="w-4 h-4 text-emerald-700" />
+            <h2 className="text-sm font-bold text-slate-900">Active Scoped Consents ({activeConsents.length})</h2>
           </div>
-          <span className="text-xs text-slate-400">Checked for each new query</span>
+          <span className="text-xs text-slate-600">Checked for each new query</span>
         </div>
 
         {activeConsents.length === 0 ? (
-          <div className="text-xs text-slate-400 text-center py-8">
+          <div className="text-xs text-slate-600 text-center py-8">
             No active consents currently granted.
           </div>
         ) : (
@@ -206,37 +206,37 @@ export default function ConsentPage() {
               return (
                 <div
                   key={c.id}
-                  className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                  className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="space-y-1.5 max-w-xl">
                     <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-white">{c.project_title || "Research Study"}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      <span className="text-xs font-bold text-slate-900">{c.project_title || "Research Study"}</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         {isExpired ? "EXPIRED" : "ACTIVE"}
                       </span>
                     </div>
 
-                    <div className="text-[11px] text-slate-400">{c.purpose}</div>
+                    <div className="text-[11px] text-slate-600">{c.purpose}</div>
 
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-slate-400 uppercase font-semibold">Scope:</span>
+                      <span className="text-[10px] text-slate-600 uppercase font-semibold">Scope:</span>
                       {scopes.map((sc: string, idx: number) => (
                         <span
                           key={idx}
-                          className="px-2 py-0.5 rounded bg-slate-800/80 text-cyan-300 border border-slate-700 text-[10px] font-mono"
+                          className="px-2 py-0.5 rounded bg-slate-100 text-brand-700 border border-slate-300 text-[10px] font-mono"
                         >
                           {sc}
                         </span>
                       ))}
                     </div>
 
-                    <div className="text-[11px] text-slate-400 flex items-center space-x-3 pt-1">
+                    <div className="text-[11px] text-slate-600 flex items-center space-x-3 pt-1">
                       <span className="flex items-center space-x-1">
                         <Calendar className="w-3 h-3" />
                         <span>Valid Until: {new Date(c.valid_until).toLocaleDateString()}</span>
                       </span>
                       <span>•</span>
-                      <span className="font-mono text-[10px] text-purple-400">
+                      <span className="font-mono text-[10px] text-purple-700">
                         Grant Tx: {c.chain_tx_hash ? c.chain_tx_hash.slice(0, 16) + "..." : "Not anchored"}
                       </span>
                     </div>
@@ -246,7 +246,7 @@ export default function ConsentPage() {
                     <button
                       onClick={() => handleRevoke(c.id)}
                       disabled={actionLoading === c.id}
-                      className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold active:scale-95 transition-all"
+                      className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 text-xs font-semibold active:scale-95 transition-all"
                     >
                       <Ban className="w-3.5 h-3.5" />
                       <span>{actionLoading === c.id ? "Revoking..." : "Revoke Consent"}</span>
@@ -261,25 +261,25 @@ export default function ConsentPage() {
 
       {/* Revocation History */}
       {revokedConsents.length > 0 && (
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-800/80 pb-3">
-            <Ban className="w-4 h-4 text-rose-400" />
-            <h2 className="text-sm font-bold text-white">Revoked Consent Audit Archive ({revokedConsents.length})</h2>
+        <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-200 pb-3">
+            <Ban className="w-4 h-4 text-rose-700" />
+            <h2 className="text-sm font-bold text-slate-900">Revoked Consent Audit Archive ({revokedConsents.length})</h2>
           </div>
 
           <div className="space-y-2">
             {revokedConsents.map((rc) => (
               <div
                 key={rc.id}
-                className="p-3 rounded-xl bg-slate-900/30 border border-slate-800/60 flex items-center justify-between text-xs"
+                className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs"
               >
                 <div>
-                  <span className="font-semibold text-slate-300">{rc.project_title}</span>
-                  <span className="text-[11px] text-slate-400 ml-2">
+                  <span className="font-semibold text-slate-700">{rc.project_title}</span>
+                  <span className="text-[11px] text-slate-600 ml-2">
                     Revoked on: {new Date(rc.revoked_at || rc.valid_until).toLocaleString()}
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-50 text-rose-700 border border-rose-200">
                   BLOCKED (HTTP 403)
                 </span>
               </div>

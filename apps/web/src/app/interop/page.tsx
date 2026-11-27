@@ -47,6 +47,7 @@ const SAMPLE_INPATIENT_BUNDLE = {
         resourceType: "Encounter",
         id: "ENC-INP-4401",
         status: "finished",
+        period: { start: "2026-10-02T08:30:00Z", end: "2026-10-06T14:00:00Z" },
         class: {
           system: "http://terminology.hl7.org/CodeSystem/v3-ActCode",
           code: "IMP",
@@ -111,6 +112,7 @@ const SAMPLE_OUTPATIENT_BUNDLE = {
         resourceType: "Encounter",
         id: "ENC-AMB-882",
         status: "finished",
+        period: { start: "2026-11-12T10:15:00Z", end: "2026-11-12T10:45:00Z" },
         class: { code: "AMB", display: "Outpatient Consultation" }
       }
     },
@@ -204,20 +206,20 @@ export default function FhirInteropPage() {
       {/* Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
-            <ArrowLeftRight className="w-6 h-6 text-teal-400" />
-            <span>HL7 FHIR R4 Interoperability Gateway</span>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center space-x-2.5">
+            <ArrowLeftRight className="w-6 h-6 text-brand-600" />
+            <span>Hospital integrations</span>
           </h1>
-          <p className="text-xs text-slate-400">
-            Standardized hospital EHR boundary: ingest clinical feeds, reconcile patient records, and export compliant FHIR R4 bundles
+          <p className="mt-1 text-sm text-slate-600">
+            HL7 and FHIR feeds from hospital systems, patient matching, and record exports.
           </p>
         </div>
 
         <div className="flex items-center space-x-2 text-xs">
-          <span className="px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-300 font-mono font-semibold flex items-center gap-1.5">
+          <span className="px-3 py-1 rounded-full bg-teal-50 border border-teal-300 text-teal-700 font-mono font-semibold flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5" /> FHIR 4.0.1 Certified
           </span>
-          <span className="px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-300 font-mono">
+          <span className="px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-slate-700 font-mono">
             RESTful Boundary
           </span>
         </div>
@@ -225,55 +227,55 @@ export default function FhirInteropPage() {
 
       {/* Metadata & Boundary Overview Card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 rounded-xl glass-panel border border-slate-800 space-y-2">
+        <div className="p-4 rounded-xl glass-panel border border-slate-200 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Capability Statement</span>
-            <Server className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs font-semibold text-slate-900">Capability Statement</span>
+            <Server className="w-4 h-4 text-brand-700" />
           </div>
-          <div className="text-sm font-bold text-cyan-300">
+          <div className="text-sm font-bold text-brand-700">
             {capability?.software?.name || "MedChain Health OS"}
           </div>
-          <div className="text-[11px] text-slate-400 font-mono">
+          <div className="text-[11px] text-slate-600 font-mono">
             Version {capability?.software?.version || "2.4.0-LTS"} • FHIR {capability?.fhirVersion || "4.0.1"}
           </div>
         </div>
 
-        <div className="p-4 rounded-xl glass-panel border border-slate-800 space-y-2">
+        <div className="p-4 rounded-xl glass-panel border border-slate-200 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Supported FHIR Resources</span>
-            <FileCode className="w-4 h-4 text-teal-400" />
+            <span className="text-xs font-semibold text-slate-900">Supported FHIR Resources</span>
+            <FileCode className="w-4 h-4 text-teal-700" />
           </div>
-          <div className="text-sm font-bold text-teal-300">
+          <div className="text-sm font-bold text-teal-700">
             Patient, Encounter, Condition
           </div>
-          <div className="text-[11px] text-slate-400 font-mono">
+          <div className="text-[11px] text-slate-600 font-mono">
             MedicationRequest, DocumentReference, Bundle
           </div>
         </div>
 
-        <div className="p-4 rounded-xl glass-panel border border-slate-800 space-y-2">
+        <div className="p-4 rounded-xl glass-panel border border-slate-200 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-white">Interoperability Standards</span>
-            <Lock className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-semibold text-slate-900">Interoperability Standards</span>
+            <Lock className="w-4 h-4 text-purple-700" />
           </div>
-          <div className="text-sm font-bold text-purple-300">
+          <div className="text-sm font-bold text-purple-700">
             21st Century Cures Act
           </div>
-          <div className="text-[11px] text-slate-400 font-mono">
+          <div className="text-[11px] text-slate-600 font-mono">
             HIPAA § 164.524 &amp; GDPR Portability Ready
           </div>
         </div>
       </div>
 
       {/* Section 1: Ingestion & Reconciliation Sandbox */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+      <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 pb-4">
           <div>
-            <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              <UploadCloud className="w-4 h-4 text-teal-400" />
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <UploadCloud className="w-4 h-4 text-teal-700" />
               <span>Inbound Hospital EHR Ingestion &amp; Patient Matching</span>
             </h2>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-600">
               Paste or load an HL7 FHIR R4 Bundle. The reconciliation engine matches MRNs, records encounters, maps ICD-10 codes, and anchors documents.
             </p>
           </div>
@@ -281,13 +283,13 @@ export default function FhirInteropPage() {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setBundleInput(JSON.stringify(SAMPLE_INPATIENT_BUNDLE, null, 2))}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-300 font-mono transition-colors"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] text-slate-700 font-mono transition-colors"
             >
               Load Inpatient Bundle
             </button>
             <button
               onClick={() => setBundleInput(JSON.stringify(SAMPLE_OUTPATIENT_BUNDLE, null, 2))}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] text-slate-300 font-mono transition-colors"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] text-slate-700 font-mono transition-colors"
             >
               Load Outpatient Bundle
             </button>
@@ -296,20 +298,20 @@ export default function FhirInteropPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 space-y-2">
-            <label className="text-xs font-semibold text-slate-300 block">
+            <label className="text-xs font-semibold text-slate-700 block">
               FHIR R4 Bundle Payload (JSON)
             </label>
             <textarea
               rows={14}
               value={bundleInput}
               onChange={(e) => setBundleInput(e.target.value)}
-              className="w-full p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-cyan-200 font-mono focus:outline-none focus:border-teal-500 leading-relaxed"
+              className="w-full p-3.5 rounded-xl bg-white border border-slate-200 text-xs text-brand-800 font-mono focus:outline-none focus:border-teal-500 leading-relaxed"
             />
             <div className="flex justify-end pt-1">
               <button
                 onClick={handleImport}
                 disabled={importing}
-                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs shadow-md shadow-teal-500/20 active:scale-95 transition-all"
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-brand-700 hover:bg-brand-600 text-white font-semibold text-xs shadow-sm transition-all"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${importing ? "animate-spin" : ""}`} />
                 <span>{importing ? "Reconciling Feed..." : "Reconcile Inbound FHIR Bundle"}</span>
@@ -318,54 +320,54 @@ export default function FhirInteropPage() {
           </div>
 
           <div className="lg:col-span-5 space-y-4">
-            <label className="text-xs font-semibold text-slate-300 block">
+            <label className="text-xs font-semibold text-slate-700 block">
               Reconciliation Engine Outcomes
             </label>
 
             {reconcileResult ? (
-              <div className="p-4 rounded-xl bg-teal-950/30 border border-teal-800/60 space-y-3 animate-in fade-in">
+              <div className="p-4 rounded-xl bg-teal-50 border border-teal-200 space-y-3 animate-in fade-in">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-teal-300 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-teal-400" />
+                  <span className="text-xs font-bold text-teal-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-teal-700" />
                     <span>Bundle Status: {reconcileResult.status}</span>
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-teal-900/60 text-teal-200 font-mono">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-teal-50 text-teal-800 font-mono">
                     Audited
                   </span>
                 </div>
 
-                <div className="text-xs text-slate-300 leading-relaxed">
+                <div className="text-xs text-slate-700 leading-relaxed">
                   {reconcileResult.message}
                 </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-teal-800/40 text-xs">
-                  <div className="flex justify-between text-slate-300">
+                <div className="space-y-1.5 pt-2 border-t border-teal-200 text-xs">
+                  <div className="flex justify-between text-slate-700">
                     <span>Patients Matched / Updated:</span>
-                    <strong className="text-teal-300">{reconcileResult.reconciliation_summary?.patients_matched}</strong>
+                    <strong className="text-teal-700">{reconcileResult.reconciliation_summary?.patients_matched}</strong>
                   </div>
-                  <div className="flex justify-between text-slate-300">
+                  <div className="flex justify-between text-slate-700">
                     <span>New Patients Registered:</span>
-                    <strong className="text-teal-300">{reconcileResult.reconciliation_summary?.patients_created}</strong>
+                    <strong className="text-teal-700">{reconcileResult.reconciliation_summary?.patients_created}</strong>
                   </div>
-                  <div className="flex justify-between text-slate-300">
+                  <div className="flex justify-between text-slate-700">
                     <span>Clinical Encounters Created:</span>
-                    <strong className="text-teal-300">{reconcileResult.reconciliation_summary?.encounters_recorded}</strong>
+                    <strong className="text-teal-700">{reconcileResult.reconciliation_summary?.encounters_recorded}</strong>
                   </div>
-                  <div className="flex justify-between text-slate-300">
+                  <div className="flex justify-between text-slate-700">
                     <span>ICD-10 Conditions Indexed:</span>
-                    <strong className="text-teal-300">{reconcileResult.reconciliation_summary?.conditions_recorded}</strong>
+                    <strong className="text-teal-700">{reconcileResult.reconciliation_summary?.conditions_recorded}</strong>
                   </div>
-                  <div className="flex justify-between text-slate-300">
+                  <div className="flex justify-between text-slate-700">
                     <span>Documents Anchored with Hashes:</span>
-                    <strong className="text-teal-300">{reconcileResult.reconciliation_summary?.documents_indexed}</strong>
+                    <strong className="text-teal-700">{reconcileResult.reconciliation_summary?.documents_indexed}</strong>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-800 rounded-xl space-y-2">
-                <ArrowLeftRight className="w-8 h-8 text-slate-600 mx-auto" />
+              <div className="p-8 text-center text-xs text-slate-600 border border-dashed border-slate-200 rounded-xl space-y-2">
+                <ArrowLeftRight className="w-8 h-8 text-slate-400 mx-auto" />
                 <div>Ready for ingestion</div>
-                <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                <p className="text-[11px] text-slate-600 max-w-xs mx-auto">
                   Click &quot;Reconcile Inbound FHIR Bundle&quot; to test transactional ingestion and multi-store anchoring.
                 </p>
               </div>
@@ -375,13 +377,13 @@ export default function FhirInteropPage() {
       </div>
 
       {/* Section 2: Outbound FHIR R4 Bundle Export */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-        <div className="border-b border-slate-800/80 pb-3">
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
-            <ArrowDownToLine className="w-4 h-4 text-cyan-400" />
+      <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-6">
+        <div className="border-b border-slate-200 pb-3">
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <ArrowDownToLine className="w-4 h-4 text-brand-700" />
             <span>HIPAA Right-of-Access &amp; Patient Data Portability Export</span>
           </h2>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-600">
             Export a certified HL7 FHIR R4 collection bundle containing verified demographics, encounters, conditions, medications, and cryptographic commitments.
           </p>
         </div>
@@ -390,7 +392,7 @@ export default function FhirInteropPage() {
           <select
             value={exportPatientId}
             onChange={(e) => setExportPatientId(e.target.value)}
-            className="w-full sm:w-80 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-cyan-500"
+            className="w-full sm:w-80 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:border-brand-500"
           >
             {patients.map((p) => (
               <option key={p.id} value={p.id}>
@@ -402,7 +404,7 @@ export default function FhirInteropPage() {
           <button
             onClick={handleExport}
             disabled={exporting || !exportPatientId}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs shadow-md shadow-cyan-500/20 active:scale-95 transition-all whitespace-nowrap"
+            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-brand-700 hover:bg-brand-600 text-white font-semibold text-xs shadow-sm transition-all whitespace-nowrap"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${exporting ? "animate-spin" : ""}`} />
             <span>{exporting ? "Generating Bundle..." : "Generate FHIR R4 Bundle"}</span>
@@ -411,7 +413,7 @@ export default function FhirInteropPage() {
           {exportedJson && (
             <button
               onClick={handleDownloadExport}
-              className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/30 text-xs font-semibold active:scale-95 transition-all whitespace-nowrap"
+              className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-teal-700 border border-teal-300 text-xs font-semibold active:scale-95 transition-all whitespace-nowrap"
             >
               <ArrowDownToLine className="w-3.5 h-3.5" />
               <span>Download JSON File</span>
@@ -421,11 +423,11 @@ export default function FhirInteropPage() {
 
         {exportedJson && (
           <div className="space-y-2 animate-in fade-in">
-            <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+            <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
               <span>Standardized FHIR R4 Bundle Preview</span>
-              <span className="text-[10px] text-cyan-400 font-mono">Format: application/fhir+json</span>
+              <span className="text-[10px] text-brand-700 font-mono">Format: application/fhir+json</span>
             </div>
-            <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 font-mono overflow-x-auto max-h-96">
+            <pre className="p-4 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 font-mono overflow-x-auto max-h-96">
               {exportedJson}
             </pre>
           </div>

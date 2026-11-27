@@ -78,6 +78,8 @@ class Prescription(BaseModel):
     dose_text = Column(String(100), nullable=False)
     frequency_text = Column(String(100), nullable=False)
     prescribed_by = Column(String(36), ForeignKey("doctor.id"), nullable=False)
+    # Set only when the prescriber continued despite a matching allergy on record.
+    allergy_override_reason = Column(String(500), nullable=True)
 
     __table_args__ = (
         CheckConstraint("end_date IS NULL OR end_date >= start_date", name="check_prescription_dates"),

@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.models import (
@@ -25,6 +25,15 @@ async def list_research_projects(
     if current_user.role == "researcher":
         project_query = project_query.where(ResearchProject.created_by == current_user.id)
     projects = (await db.execute(project_query)).scalars().all()
+    now = datetime.now(timezone.utc)
+    consent_counts = dict((await db.execute(
+        select(Consent.requester_project_id, func.count(Consent.id))
+        .where(Consent.status == "GRANTED", Consent.valid_until > now)
+        .group_by(Consent.requester_project_id)
+    )).all())
+    # Projects with active consents first: the research pages default to the first project,
+    # and a brand-new project with no consents would make every query fail.
+    projects = sorted(projects, key=lambda p: consent_counts.get(p.id, 0) == 0)
     out = []
     for p in projects:
         org = (await db.execute(select(ResearchOrganization).where(ResearchOrganization.id == p.organization_id))).scalar_one_or_none()
@@ -34,7 +43,8 @@ async def list_research_projects(
             "purpose": p.purpose,
             "status": p.status,
             "organization_name": org.name if org else "Academic Institute",
-            "created_at": p.created_at
+            "created_at": p.created_at,
+            "active_consent_count": consent_counts.get(p.id, 0),
         })
     return out
 

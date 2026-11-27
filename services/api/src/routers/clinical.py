@@ -18,7 +18,7 @@ from src.config import settings
 from src.database import get_db
 from src.models import (
     AppUser, CareTeamAssignment, Diagnosis, Disease, Doctor, Hospital, LabResult, LabTest, Medication, Patient,
-    Prescription, Visit,
+    PatientAllergy, Prescription, Visit,
 )
 from src.routers.deps import record_access_event, require_role, verify_patient_access
 from src.schemas.clinical import DiseaseOut, MedicationOut, VisitCreate, VisitOut
@@ -41,6 +41,25 @@ class PrescriptionCreate(BaseModel):
     frequency_text: str = Field(..., min_length=1, max_length=100)
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    # Required to continue when the medication matches an active allergy on record.
+    allergy_override_reason: Optional[str] = Field(default=None, max_length=500)
+
+
+def allergy_conflicts(allergies: List[PatientAllergy], medication: Medication) -> List[PatientAllergy]:
+    """Active allergies whose substance names this drug, its generic, or its class (case-insensitive).
+
+    shortcut: text matching, so "Penicillin" catches a drug whose class says penicillin but not every
+    cross-reactive drug; upgrade to coded allergens (RxNorm/SNOMED) with an interaction service.
+    """
+    names = [medication.name.lower(), medication.generic_name.lower(), medication.drug_class.lower()]
+    hits = []
+    for allergy in allergies:
+        substance = allergy.substance.strip().lower()
+        if allergy.status != "ACTIVE" or len(substance) < 3:
+            continue
+        if any(substance in n or (len(n) >= 3 and n in substance) for n in names):
+            hits.append(allergy)
+    return hits
 
 
 class LabResultCreate(BaseModel):
@@ -165,19 +184,32 @@ async def add_prescription(visit_id: str, body: PrescriptionCreate,
     start = body.start_date or date.today()
     if body.end_date and body.end_date < start:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="End date must be on or after the start date.")
+    allergies = (await db.execute(select(PatientAllergy).where(PatientAllergy.patient_id == visit.patient_id))).scalars().all()
+    conflicts = allergy_conflicts(allergies, medication)
+    override = (body.allergy_override_reason or "").strip()
+    if conflicts and len(override) < 10:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+            "code": "ALLERGY_CONFLICT",
+            "message": f"Allergy warning: {medication.name} matches "
+                       + ", ".join(f"{a.substance} ({a.severity.lower()}{', ' + a.reaction if a.reaction else ''})" for a in conflicts)
+                       + ". To prescribe anyway, give a clinical reason (at least 10 characters).",
+            "allergies": [{"id": a.id, "substance": a.substance, "severity": a.severity, "reaction": a.reaction} for a in conflicts],
+        })
     prescriber = await _acting_doctor(db, current_user, visit.doctor_id if current_user.role == "admin" else None)
     prescription = Prescription(visit_id=visit.id, medication_id=medication.id, start_date=start, end_date=body.end_date,
                                 dose_text=body.dose_text.strip(), frequency_text=body.frequency_text.strip(),
-                                prescribed_by=prescriber.id)
+                                prescribed_by=prescriber.id, allergy_override_reason=override if conflicts else None)
     db.add(prescription)
     await db.flush()
     await record_access_event(db, current_user.id, visit.patient_id, "PRESCRIPTION", prescription.id,
-                              "RECORD_PRESCRIPTION", "GRANTED", medication.code, commit=False)
+                              "RECORD_PRESCRIPTION", "GRANTED",
+                              f"ALLERGY_OVERRIDE:{medication.code}" if conflicts else medication.code, commit=False)
     await db.commit()
     EventBus.publish(ClinicalEvent("prescription.recorded", visit.patient_id, {"visit_id": visit.id, "code": medication.code}))
     return {"id": prescription.id, "medication_code": medication.code, "medication_name": medication.name,
             "dose_text": prescription.dose_text, "frequency_text": prescription.frequency_text,
-            "start_date": prescription.start_date, "end_date": prescription.end_date}
+            "start_date": prescription.start_date, "end_date": prescription.end_date,
+            "allergy_override_reason": prescription.allergy_override_reason}
 
 
 def _outside_range(value: Decimal, reference: str) -> Optional[bool]:

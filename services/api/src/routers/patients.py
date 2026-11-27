@@ -187,7 +187,8 @@ async def get_patient_timeline(
             prescriptions=[
                 PrescriptionOut(id=pr.id, medication_name=pr.medication.name if pr.medication else "",
                                 medication_code=pr.medication.code if pr.medication else "", dose_text=pr.dose_text,
-                                frequency_text=pr.frequency_text, start_date=pr.start_date, end_date=pr.end_date)
+                                frequency_text=pr.frequency_text, start_date=pr.start_date, end_date=pr.end_date,
+                                allergy_override_reason=pr.allergy_override_reason)
                 for pr in v.prescriptions
             ],
             treatments=[

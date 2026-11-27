@@ -45,8 +45,18 @@ def _decrypt_document(stored: Dict[str, Any]) -> Dict[str, Any]:
 def stored_key_id(stored: Dict[str, Any]) -> Optional[str]:
     return stored.get("key_id") if stored.get("encryption_version") == 2 else None
 
+_loaded_mtime: Optional[float] = None
+
+
+def _file_mtime() -> Optional[float]:
+    try:
+        return os.path.getmtime(_fallback_storage_file)
+    except OSError:
+        return None
+
+
 def _load_fallback():
-    global _in_memory_docs
+    global _in_memory_docs, _loaded_mtime
     if not _local_fallback_enabled():
         _in_memory_docs = {}
         return
@@ -54,13 +64,23 @@ def _load_fallback():
         try:
             with open(_fallback_storage_file, "r", encoding="utf-8") as f:
                 _in_memory_docs = json.load(f)
+            _loaded_mtime = _file_mtime()
         except Exception as e:
             logger.warning(f"Failed to load fallback documents file: {e}")
 
+
+def _reload_if_changed():
+    """Another process (seed/reset script, MLLP listener) may have rewritten the file since we loaded it."""
+    if _file_mtime() != _loaded_mtime:
+        _load_fallback()
+
+
 def _save_fallback():
+    global _loaded_mtime
     try:
         with open(_fallback_storage_file, "w", encoding="utf-8") as f:
             json.dump(_in_memory_docs, f, indent=2, default=str)
+        _loaded_mtime = _file_mtime()
     except Exception as e:
         logger.warning(f"Failed to save fallback documents file: {e}")
 
@@ -97,6 +117,7 @@ class MongoDocumentService:
             raise DocumentStoreUnavailable("MongoDB is unavailable and local document fallback is disabled outside development and test.")
         
         # Fallback
+        _reload_if_changed()
         _in_memory_docs[doc_id] = _encrypt_document(doc_data)
         _save_fallback()
         return doc_id
@@ -117,6 +138,7 @@ class MongoDocumentService:
         if not _local_fallback_enabled():
             return False
 
+        _reload_if_changed()
         if doc_id in _in_memory_docs:
             _in_memory_docs.pop(doc_id, None)
             _save_fallback()
@@ -143,7 +165,8 @@ class MongoDocumentService:
 
         if not _local_fallback_enabled():
             raise DocumentStoreUnavailable("MongoDB is unavailable and local document fallback is disabled outside development and test.")
-        
+
+        _reload_if_changed()
         doc = _in_memory_docs.get(doc_id)
         if doc and not doc.get("encrypted_payload"):
             _in_memory_docs[doc_id] = _encrypt_document(doc)
@@ -172,6 +195,7 @@ class MongoDocumentService:
         if not _local_fallback_enabled():
             return False
 
+        _reload_if_changed()
         if doc_id in _in_memory_docs:
             document = _decrypt_document(_in_memory_docs[doc_id])
             document.update(updates)
@@ -200,7 +224,8 @@ class MongoDocumentService:
 
         if not _local_fallback_enabled():
             return False
-        
+
+        _reload_if_changed()
         if doc_id in _in_memory_docs:
             document = _decrypt_document(_in_memory_docs[doc_id])
             document["content"] = new_content
@@ -226,6 +251,7 @@ class MongoDocumentService:
             return counts
         if not _local_fallback_enabled():
             raise DocumentStoreUnavailable("MongoDB is unavailable; key rotation cannot run.")
+        _reload_if_changed()
         for doc_id, stored in list(_in_memory_docs.items()):
             if stored_key_id(stored) == active:
                 counts["already_current"] += 1

@@ -37,6 +37,10 @@ The first matching group in `OIDC_ROLE_MAP` wins, and the directory is authorita
 
 **Local accounts** (patients, break-glass admin) use passwords and TOTP. `MFA_REQUIRED_ROLES` lists roles that cannot sign in without MFA. Sign-in is rate-limited per client address across all replicas (`LOGIN_RATE_LIMIT_PER_MINUTE`) and accounts lock after `LOGIN_MAX_FAILED_ATTEMPTS`.
 
+**Client addresses behind proxies:** the API sees the web tier (or load balancer) as the client unless it trusts that hop's `X-Forwarded-For`. Set `FORWARDED_ALLOW_IPS` on the API to the address(es) of the web tier, and have the HTTPS proxy in front of the web tier set `X-Forwarded-For`. Without this, every user shares one sign-in rate limit, and a busy shift change locks everyone out. Never trust forwarded headers from addresses clients can reach directly.
+
+**Sessions:** a working user stays signed in (the web app refreshes the session while there is keyboard or mouse activity, across tabs). An idle workstation is warned a minute before sign-out and signed out after `ACCESS_TOKEN_EXPIRE_MINUTES` without activity. No session lasts beyond `SESSION_MAX_HOURS` after sign-in.
+
 ## 3. Monitoring and alerting
 
 - `GET /metrics` serves Prometheus metrics. Scrape it with `Authorization: Bearer <token>` (store the SHA-256 in `METRICS_BEARER_TOKEN_HASH`). The metrics are counts only, with no patient data.

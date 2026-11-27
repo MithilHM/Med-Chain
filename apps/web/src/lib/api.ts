@@ -1,4 +1,7 @@
 const API_BASE = "/api/v1";
+
+/** Epoch ms for an API timestamp. Values without an offset (SQLite dev databases) are UTC. */
+export const utcTime = (value: string) => Date.parse(/(Z|[+-]\d\d:?\d\d)$/.test(value) ? value : `${value}Z`);
 const USER_KEY = "medchain_user";
 
 function notifyUserContextChanged() {
@@ -21,7 +24,12 @@ export interface UserContext {
 
 export interface ApiError extends Error {
   status?: number;
+  detail?: any;
 }
+
+/** Fired when an API call finds the session gone (idle timeout, revoked, or shift limit). */
+export const SESSION_EXPIRED_EVENT = "medchain-session-expired";
+const SELF_HANDLED_401 = ["/auth/login", "/auth/mfa/verify", "/auth/signup", "/auth/invitations/", "/auth/me", "/auth/refresh", "/auth/logout"];
 
 type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown };
 
@@ -44,15 +52,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
+    let detail: any;
     try {
       const payload = await response.json();
-      const detail = payload?.detail;
-      message = typeof detail === "string" ? detail : detail?.message || JSON.stringify(detail || payload);
+      detail = payload?.detail;
+      message = typeof detail === "string" ? detail
+        // FastAPI validation errors: [{loc, msg}, ...]; drop pydantic's "Value error, " prefix.
+        : Array.isArray(detail) ? detail.map((d) => String(d?.msg ?? d).replace(/^Value error, /, "")).join(" ")
+        : detail?.message || JSON.stringify(detail || payload);
     } catch {
       // Keep the status-based message when the server did not return JSON.
     }
     const error = new Error(message) as ApiError;
     error.status = response.status;
+    error.detail = detail;
+    // Sign-in endpoints answer 401 for bad credentials, and AuthShell handles /auth/me and /auth/refresh
+    // itself; anywhere else a 401 means the session ended.
+    if (response.status === 401 && !SELF_HANDLED_401.some((p) => path.startsWith(p)) && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: message }));
+    }
     throw error;
   }
 
@@ -136,10 +154,13 @@ export const ApiClient = {
     return request<UserContext>("/auth/me");
   },
 
+  refreshSession: () => request<{ status: string; idle_timeout_seconds: number }>("/auth/refresh", { method: "POST" }),
+
   clearLocalUser() {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("medchain_token"); // legacy value from older builds
       window.localStorage.removeItem(USER_KEY);
+      window.localStorage.removeItem("medchain_session_refreshed"); // AuthShell's idle-timeout clock
       notifyUserContextChanged();
     }
   },

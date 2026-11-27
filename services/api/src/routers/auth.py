@@ -95,9 +95,12 @@ async def _enforce_login_rate_limit(db: AsyncSession, client_key: str) -> None:
     await db.flush()
 
 
-async def _issue_session(user: AppUser, request: Request, response: Response, db: AsyncSession) -> str:
+async def _issue_session(user: AppUser, request: Request, response: Response, db: AsyncSession,
+                         auth_time: Optional[float] = None) -> str:
+    # auth_time = when the user actually signed in; refreshes carry it forward so SESSION_MAX_HOURS holds.
     token, token_jti, expires_at = create_access_token(
-        data={"sub": user.id, "role": user.role, "email": user.email}
+        data={"sub": user.id, "role": user.role, "email": user.email,
+              "auth_time": auth_time or datetime.now(timezone.utc).timestamp()}
     )
     await register_user_session(
         db, user.id, token_jti, expires_at,
@@ -490,6 +493,44 @@ async def logout(
         await revoke_session_by_jti(db, payload["jti"])
         await db.commit()
     _clear_session_cookie(response)
+
+
+_REFRESH_GRACE_SECONDS = 30
+
+
+@router.post("/refresh")
+async def refresh_session(
+    request: Request,
+    response: Response,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extend an active user's session (the web app calls this while the user is working).
+
+    Idle users are not refreshed, so their session ends after ACCESS_TOKEN_EXPIRE_MINUTES. No session
+    is extended past SESSION_MAX_HOURS from the original sign-in.
+    """
+    token = credentials.credentials if credentials else request.cookies.get("medchain_session")
+    payload = decode_access_token(token) or {}
+    old = (await db.execute(select(UserSession).where(UserSession.token_jti == payload.get("jti")))).scalar_one()
+    now = datetime.now(timezone.utc)
+    auth_time = float(payload.get("auth_time") or payload.get("iat") or now.timestamp())
+    if now.timestamp() - auth_time >= settings.SESSION_MAX_HOURS * 3600:
+        await revoke_session_by_jti(db, old.token_jti)
+        await db.commit()
+        _clear_session_cookie(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Your session reached the {settings.SESSION_MAX_HOURS}-hour limit. Please sign in again.",
+        )
+    # shortcut: each refresh adds a user_session row (about one per 5 minutes per active user) and nothing
+    # prunes expired rows yet; add a nightly cleanup of rows expired for 30+ days once the table grows.
+    # Requests already in flight still carry the old cookie: let it live briefly instead of revoking it.
+    old.expires_at = min(old.expires_at if old.expires_at.tzinfo else old.expires_at.replace(tzinfo=timezone.utc),
+                         now + timedelta(seconds=_REFRESH_GRACE_SECONDS))
+    await _issue_session(current_user, request, response, db, auth_time=auth_time)
+    return {"status": "REFRESHED", "idle_timeout_seconds": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60}
 
 
 @router.post("/demo-switch")

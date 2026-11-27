@@ -7,10 +7,10 @@ import {
   PlusCircle, Search, ShieldAlert, Stethoscope, UserPlus, Users, X, UserCog, DoorOpen,
 } from "lucide-react";
 
-const input = "w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500";
-const label = "text-xs font-semibold text-slate-300 block mb-1";
-const primaryButton = "px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white text-xs font-semibold";
-const ghostButton = "px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-medium";
+const input = "w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-brand-500";
+const label = "text-xs font-semibold text-slate-700 block mb-1";
+const primaryButton = "px-4 py-2 rounded-lg bg-brand-700 hover:bg-brand-600 disabled:opacity-60 text-white text-xs font-semibold";
+const ghostButton = "px-4 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium";
 const ENCOUNTER_TYPES = ["Outpatient Consultation", "Inpatient Admission", "Emergency Evaluation", "Telehealth Review"];
 
 function age(dob: string): number {
@@ -22,15 +22,15 @@ function age(dob: string): number {
   return years;
 }
 
-function Modal({ title, icon: Icon, onClose, children, tone = "border-slate-800" }: {
+function Modal({ title, icon: Icon, onClose, children, tone = "border-slate-200" }: {
   title: string; icon: React.ElementType; onClose: () => void; children: React.ReactNode; tone?: string;
 }) {
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`glass-panel w-full max-w-lg rounded-2xl border ${tone} shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h2 className="text-base font-bold text-white flex items-center gap-2"><Icon className="w-5 h-5 text-cyan-400" />{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className={`glass-panel w-full max-w-lg rounded-xl border ${tone} shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto`}>
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Icon className="w-5 h-5 text-brand-700" />{title}</h2>
+          <button onClick={onClose} className="text-slate-600 hover:text-slate-900"><X className="w-5 h-5" /></button>
         </div>
         {children}
       </div>
@@ -41,12 +41,12 @@ function Modal({ title, icon: Icon, onClose, children, tone = "border-slate-800"
 function OneTimeCode({ code, expires, onClose }: { code: string; expires: string; onClose: () => void }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-300">Give this patient-portal activation code to the patient in person. They create their account at <code className="text-cyan-300">/signup</code> with this code and their date of birth.</p>
+      <p className="text-xs text-slate-700">Give this patient-portal activation code to the patient in person. They create their account at <code className="text-brand-700">/signup</code> with this code and their date of birth.</p>
       <div className="flex items-center gap-2">
-        <code className="flex-1 text-center text-lg tracking-widest font-mono text-white bg-slate-950 border border-amber-500/40 rounded-xl py-3">{code}</code>
-        <button onClick={() => navigator.clipboard.writeText(code)} className="text-cyan-300 text-xs flex items-center gap-1"><Copy className="w-3.5 h-3.5" />Copy</button>
+        <code className="flex-1 text-center text-lg tracking-widest font-mono text-slate-900 bg-white border border-amber-300 rounded-xl py-3">{code}</code>
+        <button onClick={() => navigator.clipboard.writeText(code)} className="text-brand-700 text-xs flex items-center gap-1"><Copy className="w-3.5 h-3.5" />Copy</button>
       </div>
-      <p className="text-[11px] text-amber-200/80">Shown only once. Expires {new Date(expires).toLocaleString()}.</p>
+      <p className="text-[11px] text-amber-800">Shown only once. Expires {new Date(expires).toLocaleString()}.</p>
       <div className="flex justify-end"><button onClick={onClose} className={primaryButton}>Done</button></div>
     </div>
   );
@@ -202,10 +202,13 @@ export default function PatientsPage() {
   const submitBreakGlass = (e: React.FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      const res = await ApiClient.breakGlassEmergency(selectedPatientId!, form.justification);
+      // By MRN: the patient is usually not on this doctor's list yet, which is the point of break-glass.
+      const res = await ApiClient.breakGlassEmergency(form.mrn.trim(), form.justification);
       close();
-      setNotice(`Emergency access granted until ${new Date(res.expires_at).toLocaleTimeString()}. This access is logged for compliance review.`);
-      await refreshChart();
+      setNotice(`Emergency access to ${res.patient_mrn} granted until ${new Date(res.expires_at).toLocaleTimeString()}. This access is logged for compliance review.`);
+      await loadPatients(search.trim() || undefined);
+      setSelectedPatientId(res.patient_id);
+      await loadTimeline(res.patient_id);
     });
   };
 
@@ -228,8 +231,15 @@ export default function PatientsPage() {
       if (entry.kind === "diagnosis") {
         await ApiClient.addDiagnosis(entry.visitId, { disease_code: form.disease_code, severity: form.severity || "Moderate", status: form.status || "Active" });
       } else if (entry.kind === "prescription") {
-        await ApiClient.addPrescription(entry.visitId, { medication_code: form.medication_code, dose_text: form.dose_text,
-          frequency_text: form.frequency_text, end_date: form.end_date || undefined });
+        try {
+          await ApiClient.addPrescription(entry.visitId, { medication_code: form.medication_code, dose_text: form.dose_text,
+            frequency_text: form.frequency_text, end_date: form.end_date || undefined,
+            allergy_override_reason: form.allergy_conflict ? form.allergy_override_reason : undefined });
+        } catch (err: any) {
+          // The server blocks drugs matching a recorded allergy; reveal the override field.
+          if (err.detail?.code === "ALLERGY_CONFLICT") setForm((f) => ({ ...f, allergy_conflict: true }));
+          throw err;
+        }
       } else {
         await ApiClient.addLabResult(entry.visitId, { lab_test_code: form.lab_test_code, result_value: Number(form.result_value) });
       }
@@ -288,10 +298,10 @@ export default function PatientsPage() {
 
   if (error) {
     return (
-      <div className="glass-panel p-8 rounded-2xl border border-rose-900/50 text-center space-y-4">
-        <ShieldAlert className="w-12 h-12 text-rose-400 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Patient records are not available for your role</h2>
-        <p className="text-sm text-slate-400 max-w-md mx-auto">{error}</p>
+      <div className="glass-panel p-8 rounded-xl border border-rose-200 text-center space-y-4">
+        <ShieldAlert className="w-12 h-12 text-rose-700 mx-auto" />
+        <h2 className="text-xl font-bold text-slate-900">Patient records are not available for your role</h2>
+        <p className="text-sm text-slate-600 max-w-md mx-auto">{error}</p>
       </div>
     );
   }
@@ -300,11 +310,11 @@ export default function PatientsPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
-            <Users className="w-6 h-6 text-cyan-400" />
-            <span>{role === "patient" ? "My Health Record" : "Patient Records"}</span>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center space-x-2.5">
+            <Users className="w-6 h-6 text-brand-600" />
+            <span>{role === "patient" ? "My health record" : "Patients"}</span>
           </h1>
-          <p className="text-xs text-slate-400">
+          <p className="mt-1 text-sm text-slate-600">
             {isAdmin ? "Register patients, manage care teams, and issue portal access." :
               role === "doctor" ? "Patients on your care team. Use break-the-glass only in an emergency." :
               "Your encounters, results, medications, and allergies."}
@@ -313,115 +323,115 @@ export default function PatientsPage() {
         <div className="flex items-center gap-2.5 flex-wrap">
           {isAdmin && (
             <button onClick={() => open("register", { sex: "F", hospital_id: hospitals[0]?.id, issue_portal_invitation: true })}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs">
+              className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-brand-700 hover:bg-brand-600 text-white font-medium text-xs">
               <UserPlus className="w-3.5 h-3.5" /> Register Patient
             </button>
           )}
-          {selectedPatientId && role === "doctor" && (
-            <button onClick={() => open("breakglass")}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-semibold">
-              <Flame className="w-3.5 h-3.5 text-amber-400" /> Emergency Break-Glass
+          {role === "doctor" && (
+            <button onClick={() => open("breakglass", { mrn: "" })}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-300 text-xs font-semibold">
+              <Flame className="w-3.5 h-3.5 text-amber-700" /> Emergency Break-Glass
             </button>
           )}
           {selectedPatientId && (
             <button onClick={exportFhir} disabled={busy}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium">
-              <ArrowDownToLine className="w-3.5 h-3.5 text-teal-400" /> Export FHIR R4
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-medium">
+              <ArrowDownToLine className="w-3.5 h-3.5 text-teal-700" /> Export FHIR R4
             </button>
           )}
         </div>
       </div>
 
       {notice && (
-        <div className="flex items-center gap-2 text-xs text-emerald-200 bg-emerald-950/40 border border-emerald-800 rounded-xl px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
           <CheckCircle2 className="w-4 h-4" /> {notice}
-          <button onClick={() => setNotice(null)} className="ml-auto text-slate-400"><X className="w-3.5 h-3.5" /></button>
+          <button onClick={() => setNotice(null)} className="ml-auto text-slate-600"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
       {actionError && !modal && !entry && (
-        <div className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2">{actionError}</div>
+        <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{actionError}</div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Directory */}
-        <div className="lg:col-span-4 glass-panel p-4 rounded-2xl border border-slate-800 space-y-4">
-          {role !== "patient" && (
+        {role !== "patient" && <div className="lg:col-span-4 glass-panel p-4 rounded-xl border border-slate-200 space-y-4">
+          {(
             <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-600" />
               <input type="text" placeholder="Search MRN or family name…" value={search} onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500/50" />
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-brand-400" />
             </div>
           )}
           <div className="space-y-2 max-h-[640px] overflow-y-auto pr-1">
             {loading ? (
-              <div className="text-xs text-slate-400 text-center py-8">Loading patients…</div>
+              <div className="text-xs text-slate-600 text-center py-8">Loading patients…</div>
             ) : patients.length === 0 ? (
-              <div className="text-xs text-slate-400 text-center py-8">
+              <div className="text-xs text-slate-600 text-center py-8">
                 {search ? "No matching records." : role === "doctor" ? "No patients are assigned to your care yet." : "No patients registered yet."}
               </div>
             ) : patients.map((p) => (
               <button key={p.id} onClick={() => setSelectedPatientId(p.id)}
                 className={`w-full p-3.5 rounded-xl border text-left transition-all ${p.id === selectedPatientId
-                  ? "bg-cyan-500/10 border-cyan-500/40" : "bg-slate-900/40 border-slate-800/80 hover:border-slate-700"}`}>
-                <div className="text-xs font-semibold text-white">{p.display_name || "Name not recorded"}</div>
-                <div className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                  ? "bg-brand-50 border-brand-300" : "bg-slate-50 border-slate-200 hover:border-slate-300"}`}>
+                <div className="text-xs font-semibold text-slate-900">{p.display_name || "Name not recorded"}</div>
+                <div className="text-[11px] font-mono text-slate-700 flex items-center gap-1.5">
                   {p.display_code}
-                  {p.record_status === "MERGED" && <span className="px-1.5 rounded bg-purple-950 text-purple-300 border border-purple-800">merged</span>}
-                  {p.has_portal_account && <span className="px-1.5 rounded bg-slate-800 text-slate-400">portal</span>}
+                  {p.record_status === "MERGED" && <span className="px-1.5 rounded bg-purple-50 text-purple-700 border border-purple-200">merged</span>}
+                  {p.has_portal_account && <span className="px-1.5 rounded bg-slate-100 text-slate-600">portal</span>}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">DOB {p.date_of_birth} · {p.sex}</div>
               </button>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Chart */}
-        <div className="lg:col-span-8 glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
+        <div className={`${role === "patient" ? "lg:col-span-12" : "lg:col-span-8"} glass-panel p-6 rounded-xl border border-slate-200 space-y-6`}>
           {timelineLoading ? (
-            <div className="text-xs text-slate-400 text-center py-16">Loading chart…</div>
+            <div className="text-xs text-slate-600 text-center py-16">Loading chart…</div>
           ) : !timeline ? (
-            <div className="text-xs text-slate-400 text-center py-16">Select a patient to view their chart.</div>
+            <div className="text-xs text-slate-600 text-center py-16">Select a patient to view their chart.</div>
           ) : (
             <div className="space-y-6">
-              <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-wrap items-start justify-between gap-4">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="text-base font-bold text-white">{selected.display_name || "Name not recorded"}</div>
-                  <div className="text-xs font-mono text-slate-300 flex items-center gap-2">
+                  <div className="text-base font-bold text-slate-900">{selected.display_name || "Name not recorded"}</div>
+                  <div className="text-xs font-mono text-slate-700 flex items-center gap-2">
                     MRN {selected.display_code}
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border ${writable
-                      ? "bg-emerald-950 text-emerald-300 border-emerald-800" : "bg-purple-950 text-purple-300 border-purple-800"}`}>
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-purple-50 text-purple-700 border-purple-200"}`}>
                       {writable ? "Active record" : "Merged record (read-only)"}
                     </span>
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">
+                  <div className="text-xs text-slate-600 mt-1">
                     DOB {selected.date_of_birth} ({age(selected.date_of_birth)} yrs) · Sex {selected.sex}
                     {timeline.facilities?.length > 0 && <> · Seen at {timeline.facilities.join(", ")}</>}
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">
+                  <div className="text-xs text-slate-600 mt-1">
                     Care team: {timeline.care_team?.length
                       ? timeline.care_team.map((c: any) => `${c.doctor_name} (${c.relationship_type.toLowerCase().replace("_", " ")})`).join(", ")
-                      : <span className="text-amber-300">none assigned</span>}
+                      : <span className="text-amber-700">none assigned</span>}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {canChart && writable && (
                     <button onClick={() => open("encounter", { visit_type: ENCOUNTER_TYPES[0], doctor_id: timeline.care_team?.[0]?.doctor_id })}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold">
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-100 text-brand-700 border border-brand-300 text-xs font-semibold">
                       <PlusCircle className="w-3.5 h-3.5" /> New Encounter
                     </button>
                   )}
                   {isAdmin && writable && (
                     <>
-                      <button onClick={openCareTeam} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-xs">
+                      <button onClick={openCareTeam} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-800 border border-slate-300 text-xs">
                         <UserCog className="w-3.5 h-3.5" /> Care team
                       </button>
                       <button onClick={() => open("edit", { given_name: selected.display_name?.split(", ")[1] ?? "",
                         family_name: selected.display_name?.split(", ")[0] ?? "", date_of_birth: selected.date_of_birth, sex: selected.sex })}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-xs">
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-800 border border-slate-300 text-xs">
                         <Pencil className="w-3.5 h-3.5" /> Edit details
                       </button>
                       {!selected.has_portal_account && (
-                        <button onClick={issueCode} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-xs">
+                        <button onClick={issueCode} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-800 border border-slate-300 text-xs">
                           <KeyRound className="w-3.5 h-3.5" /> Portal code
                         </button>
                       )}
@@ -431,23 +441,23 @@ export default function PatientsPage() {
               </div>
 
               {/* Allergies */}
-              <div className={`p-3 rounded-xl border text-xs ${timeline.allergies?.length ? "bg-rose-950/30 border-rose-800/50" : "bg-slate-900/40 border-slate-800"}`}>
+              <div className={`p-3 rounded-xl border text-xs ${timeline.allergies?.length ? "bg-rose-50 border-rose-200" : "bg-slate-50 border-slate-200"}`}>
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className={`w-4 h-4 ${timeline.allergies?.length ? "text-rose-400" : "text-slate-500"}`} />
-                  <span className="font-semibold text-white">Allergies</span>
+                  <AlertTriangle className={`w-4 h-4 ${timeline.allergies?.length ? "text-rose-700" : "text-slate-500"}`} />
+                  <span className="font-semibold text-slate-900">Allergies</span>
                   {canChart && writable && (
-                    <button onClick={() => open("allergy", { severity: "UNKNOWN" })} className="ml-auto text-cyan-300 hover:text-cyan-200">+ Add</button>
+                    <button onClick={() => open("allergy", { severity: "UNKNOWN" })} className="ml-auto text-brand-700 hover:text-brand-800">+ Add</button>
                   )}
                 </div>
                 {timeline.allergies?.length ? (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {timeline.allergies.map((a: any) => (
-                      <span key={a.id} className="px-2.5 py-1 rounded-lg bg-rose-900/40 border border-rose-700/50 text-rose-100">
+                      <span key={a.id} className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-400 text-rose-800">
                         <b>{a.substance}</b>{a.reaction ? ` · ${a.reaction}` : ""} · {a.severity.toLowerCase()}
                         {canChart && (
                           <button title="Mark inactive" onClick={() => void run(async () => {
                             await ApiClient.updateAllergyStatus(selectedPatientId!, a.id, "INACTIVE"); await refreshChart();
-                          })} className="ml-2 text-rose-300/70 hover:text-white">×</button>
+                          })} className="ml-2 text-rose-700 hover:text-slate-900">×</button>
                         )}
                       </span>
                     ))}
@@ -458,9 +468,9 @@ export default function PatientsPage() {
               {timeline.adverse_events?.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {timeline.adverse_events.map((ae: any) => (
-                    <div key={ae.id} className="p-3 rounded-xl bg-amber-950/20 border border-amber-800/40 text-xs">
-                      <div className="font-semibold text-amber-200">Adverse event: {ae.side_effect_name}</div>
-                      <div className="text-[11px] text-slate-400">Severity {ae.severity} · Outcome {ae.outcome}</div>
+                    <div key={ae.id} className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs">
+                      <div className="font-semibold text-amber-800">Adverse event: {ae.side_effect_name}</div>
+                      <div className="text-[11px] text-slate-600">Severity {ae.severity} · Outcome {ae.outcome}</div>
                     </div>
                   ))}
                 </div>
@@ -468,28 +478,28 @@ export default function PatientsPage() {
 
               {/* Encounters */}
               <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-cyan-400" /> Encounters ({timeline.visits?.length || 0})
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-brand-700" /> Encounters ({timeline.visits?.length || 0})
                 </h3>
                 {timeline.visits?.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-800 rounded-xl">
+                  <div className="p-8 text-center text-xs text-slate-600 border border-dashed border-slate-200 rounded-xl">
                     No encounters yet.{canChart && writable ? " Use New Encounter to start one." : ""}
                   </div>
                 ) : timeline.visits.map((v: any) => {
                   const open_ = !v.discharged_at;
                   const canEdit = canChart && writable && v.status === "ACTIVE";
                   return (
-                    <div key={v.id} className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                    <div key={v.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2.5">
                         <div className="flex items-center gap-2">
-                          <Stethoscope className="w-4 h-4 text-cyan-400" />
-                          <span className="text-xs font-bold text-white">{v.visit_type}</span>
-                          {v.summary_code && <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">{v.summary_code}</span>}
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${open_ ? "bg-emerald-950 text-emerald-300" : "bg-slate-800 text-slate-400"}`}>
+                          <Stethoscope className="w-4 h-4 text-brand-700" />
+                          <span className="text-xs font-bold text-slate-900">{v.visit_type}</span>
+                          {v.summary_code && <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">{v.summary_code}</span>}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${open_ ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                             {open_ ? "open" : `closed ${new Date(v.discharged_at).toLocaleDateString()}`}
                           </span>
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-600">
                           {new Date(v.visit_at).toLocaleDateString()} · {v.doctor_name || "Attending"} · {v.hospital_name || "—"}
                         </div>
                       </div>
@@ -497,8 +507,8 @@ export default function PatientsPage() {
                       {v.diagnoses?.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {v.diagnoses.map((d: any) => (
-                            <span key={d.id} className="text-xs px-2.5 py-1 rounded-lg bg-cyan-950/60 text-cyan-200 border border-cyan-800/60">
-                              <b className="font-mono text-cyan-400">{d.disease_code}</b> {d.disease_name} <span className="text-[10px] text-slate-400">({d.severity}, {d.status})</span>
+                            <span key={d.id} className="text-xs px-2.5 py-1 rounded-lg bg-brand-50 text-brand-800 border border-brand-200">
+                              <b className="font-mono text-brand-700">{d.disease_code}</b> {d.disease_name} <span className="text-[10px] text-slate-600">({d.severity}, {d.status})</span>
                             </span>
                           ))}
                         </div>
@@ -506,9 +516,12 @@ export default function PatientsPage() {
                       {v.prescriptions?.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {v.prescriptions.map((p: any) => (
-                            <span key={p.id} className="text-xs px-2.5 py-1 rounded-lg bg-purple-950/60 text-purple-200 border border-purple-800/60 flex items-center gap-1.5">
-                              <Pill className="w-3 h-3 text-purple-400" /> {p.medication_name}
-                              <span className="text-[10px] text-slate-400">{p.dose_text}, {p.frequency_text}{p.end_date ? ` until ${p.end_date}` : ""}</span>
+                            <span key={p.id} className="text-xs px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1.5">
+                              <Pill className="w-3 h-3 text-purple-700" /> {p.medication_name}
+                              <span className="text-[10px] text-slate-600">{p.dose_text}, {p.frequency_text}{p.end_date ? ` until ${p.end_date}` : ""}</span>
+                              {p.allergy_override_reason && (
+                                <span title={p.allergy_override_reason} className="text-[10px] font-semibold text-rose-700">⚠ given despite allergy</span>
+                              )}
                             </span>
                           ))}
                         </div>
@@ -517,14 +530,14 @@ export default function PatientsPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {v.lab_results.map((l: any) => (
                             <div key={l.id} className={`p-2 rounded-lg text-xs flex items-center justify-between border ${l.is_abnormal
-                              ? "bg-rose-950/30 border-rose-800/40 text-rose-200" : "bg-slate-950/40 border-slate-800 text-slate-300"}`}>
+                              ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-white border-slate-200 text-slate-700"}`}>
                               <div>
                                 <span className="font-medium">{l.test_name}</span>
-                                <span className="text-[10px] text-slate-400 block">Ref {l.reference_range_text} · {new Date(l.measured_at).toLocaleDateString()}</span>
+                                <span className="text-[10px] text-slate-600 block">Ref {l.reference_range_text} · {new Date(l.measured_at).toLocaleDateString()}</span>
                               </div>
                               <div className="text-right">
                                 <span className="font-mono font-bold">{l.result_value} {l.unit}</span>
-                                {l.is_abnormal && <span className="text-[10px] text-rose-400 block font-semibold">ABNORMAL</span>}
+                                {l.is_abnormal && <span className="text-[10px] text-rose-700 block font-semibold">ABNORMAL</span>}
                               </div>
                             </div>
                           ))}
@@ -534,14 +547,14 @@ export default function PatientsPage() {
                       {canEdit && (
                         <div className="flex flex-wrap gap-2 pt-1">
                           <button onClick={() => { setForm({ severity: "Moderate", status: "Active" }); setEntry({ kind: "diagnosis", visitId: v.id }); }}
-                            className="text-[11px] px-2.5 py-1 rounded-lg border border-cyan-800/60 text-cyan-300 hover:bg-cyan-500/10">+ Diagnosis</button>
+                            className="text-[11px] px-2.5 py-1 rounded-lg border border-brand-200 text-brand-700 hover:bg-brand-50">+ Diagnosis</button>
                           <button onClick={() => { setForm({}); setEntry({ kind: "prescription", visitId: v.id }); }}
-                            className="text-[11px] px-2.5 py-1 rounded-lg border border-purple-800/60 text-purple-300 hover:bg-purple-500/10">+ Prescription</button>
+                            className="text-[11px] px-2.5 py-1 rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50">+ Prescription</button>
                           <button onClick={() => { setForm({}); setEntry({ kind: "lab", visitId: v.id }); }}
-                            className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1"><FlaskConical className="w-3 h-3" />Lab result</button>
+                            className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 flex items-center gap-1"><FlaskConical className="w-3 h-3" />Lab result</button>
                           {open_ && (
                             <button onClick={() => discharge(v.id)}
-                              className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800 flex items-center gap-1 ml-auto"><DoorOpen className="w-3 h-3" />Close encounter</button>
+                              className="text-[11px] px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 flex items-center gap-1 ml-auto"><DoorOpen className="w-3 h-3" />Close encounter</button>
                           )}
                         </div>
                       )}
@@ -556,7 +569,7 @@ export default function PatientsPage() {
 
       {/* ---------------------------------------------------------- modals */}
       {(modal || entry) && actionError && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] text-xs text-rose-200 bg-rose-950 border border-rose-800 rounded-xl px-4 py-2">{actionError}</div>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2">{actionError}</div>
       )}
 
       {modal === "register" && (
@@ -586,11 +599,11 @@ export default function PatientsPage() {
                 <option value="">Assign later</option>
                 {doctors.map((d) => <option key={d.id} value={d.id}>{d.display_name} · {d.specialty} · {d.hospital_name}</option>)}
               </select></div>
-            <label className="flex items-center gap-2 text-xs text-slate-300">
+            <label className="flex items-center gap-2 text-xs text-slate-700">
               <input type="checkbox" checked={!!form.issue_portal_invitation} onChange={set("issue_portal_invitation")} />
               Issue a patient-portal activation code now
             </label>
-            {actionError && <p className="text-xs text-rose-300">{actionError}</p>}
+            {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={close} className={ghostButton}>Cancel</button>
               <button type="submit" disabled={busy} className={primaryButton}>{busy ? "Registering…" : "Register"}</button>
@@ -612,7 +625,7 @@ export default function PatientsPage() {
                 </select></div>
             </div>
             <p className="text-[11px] text-slate-500">Corrections are audited. Demographics fed from the hospital ADT system may be overwritten by later updates.</p>
-            {actionError && <p className="text-xs text-rose-300">{actionError}</p>}
+            {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
               <button type="submit" disabled={busy} className={primaryButton}>Save</button></div>
           </form>
@@ -624,10 +637,10 @@ export default function PatientsPage() {
           <ul className="space-y-2 text-xs">
             {careTeam.length === 0 && <li className="text-slate-500">No care-team history.</li>}
             {careTeam.map((c) => (
-              <li key={c.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800">
-                <span className={c.active ? "text-white" : "text-slate-500 line-through"}>{c.doctor_name}</span>
+              <li key={c.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200">
+                <span className={c.active ? "text-slate-900" : "text-slate-500 line-through"}>{c.doctor_name}</span>
                 <span className="text-slate-500">{c.relationship_type.toLowerCase().replace("_", " ")} · {c.source.toLowerCase()}</span>
-                {c.active && <button onClick={() => endCareTeam(c.id)} disabled={busy} className="ml-auto text-rose-300 hover:text-rose-200">End</button>}
+                {c.active && <button onClick={() => endCareTeam(c.id)} disabled={busy} className="ml-auto text-rose-700 hover:text-rose-800">End</button>}
               </li>
             ))}
           </ul>
@@ -647,17 +660,19 @@ export default function PatientsPage() {
       )}
 
       {modal === "breakglass" && (
-        <Modal title="Emergency break-the-glass access" icon={Flame} onClose={close} tone="border-amber-900/60">
+        <Modal title="Emergency break-the-glass access" icon={Flame} onClose={close} tone="border-amber-200">
           <form onSubmit={submitBreakGlass} className="space-y-3">
-            <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-800/40 text-xs text-amber-200/90">
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
               Use only in an emergency for a patient not on your care team. Access lasts a limited time, is logged, and is reviewed by compliance.
             </div>
+            <div><span className={label}>Patient MRN</span>
+              <input required value={form.mrn || ""} onChange={set("mrn")} placeholder="e.g. PT-100205" className={input} /></div>
             <textarea required rows={3} minLength={10} placeholder="Clinical justification (required)" value={form.justification || ""}
               onChange={set("justification")} className={input} />
-            {actionError && <p className="text-xs text-rose-300">{actionError}</p>}
+            {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
-              <button type="submit" disabled={busy || (form.justification || "").trim().length < 10}
-                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold disabled:opacity-50">Authorize emergency access</button></div>
+              <button type="submit" disabled={busy || !(form.mrn || "").trim() || (form.justification || "").trim().length < 10}
+                className="px-4 py-2 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-xs font-semibold disabled:opacity-50">Authorize emergency access</button></div>
           </form>
         </Modal>
       )}
@@ -678,7 +693,7 @@ export default function PatientsPage() {
             )}
             <div><span className={label}>Reason / summary code (optional)</span>
               <input value={form.summary_code || ""} onChange={set("summary_code")} placeholder="e.g. I10-FOLLOWUP" className={input} /></div>
-            {actionError && <p className="text-xs text-rose-300">{actionError}</p>}
+            {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
               <button type="submit" disabled={busy} className={primaryButton}>Start encounter</button></div>
           </form>
@@ -696,7 +711,7 @@ export default function PatientsPage() {
                   {["MILD", "MODERATE", "SEVERE", "UNKNOWN"].map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
                 </select></div>
             </div>
-            {actionError && <p className="text-xs text-rose-300">{actionError}</p>}
+            {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
               <button type="submit" disabled={busy} className={primaryButton}>Save allergy</button></div>
           </form>
@@ -729,7 +744,7 @@ export default function PatientsPage() {
             {entry.kind === "prescription" && (
               <>
                 {timeline?.allergies?.length > 0 && (
-                  <p className="text-xs text-rose-300 bg-rose-950/40 border border-rose-800/50 rounded-lg px-3 py-2">
+                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
                     Allergies on record: {timeline.allergies.map((a: any) => a.substance).join(", ")}
                   </p>
                 )}
@@ -743,6 +758,11 @@ export default function PatientsPage() {
                   <div><span className={label}>Frequency</span><input required value={form.frequency_text || ""} onChange={set("frequency_text")} placeholder="twice daily" className={input} /></div>
                 </div>
                 <div><span className={label}>End date (optional)</span><input type="date" value={form.end_date || ""} onChange={set("end_date")} className={input} /></div>
+                {form.allergy_conflict && (
+                  <div><span className={label}>Reason for prescribing despite the allergy (recorded and audited)</span>
+                    <textarea required minLength={10} rows={2} value={form.allergy_override_reason || ""} onChange={set("allergy_override_reason")}
+                      placeholder="e.g. Reaction was mild rash; benefit outweighs risk, monitoring in place" className={input} /></div>
+                )}
               </>
             )}
             {entry.kind === "lab" && (
@@ -756,9 +776,9 @@ export default function PatientsPage() {
                 <p className="text-[11px] text-slate-500">Results outside the reference range are flagged abnormal automatically.</p>
               </>
             )}
-            {actionError && <p className="text-xs text-rose-300">{actionError}</p>}
+            {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
-              <button type="submit" disabled={busy} className={primaryButton}>Save</button></div>
+              <button type="submit" disabled={busy} className={primaryButton}>{form.allergy_conflict ? "Prescribe despite allergy" : "Save"}</button></div>
           </form>
         </Modal>
       )}

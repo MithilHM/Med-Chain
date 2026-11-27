@@ -65,3 +65,29 @@ async def test_consent_revocation_idempotency_and_outbox(client):
     assert r2.status_code == 200
     assert r2.json()["status"] == "REVOKED"
 
+
+
+@pytest.mark.asyncio
+async def test_fallback_document_store_sees_writes_from_other_processes(tmp_path, monkeypatch):
+    """A reseed script or second process rewriting the dev fallback file must not leave this process stale."""
+    import json
+    import os
+    import time
+    from src.services import mongo
+
+    async def no_mongo():
+        return None
+
+    monkeypatch.setattr(mongo, "get_mongo_client", no_mongo)
+    path = tmp_path / "docs.json"
+    monkeypatch.setattr(mongo, "_fallback_storage_file", str(path))
+    monkeypatch.setattr(mongo, "_in_memory_docs", {})
+    monkeypatch.setattr(mongo, "_loaded_mtime", None)
+
+    await mongo.MongoDocumentService.insert_document({"_id": "doc-a", "content": "one"})
+    path.write_text(json.dumps({"doc-b": mongo._encrypt_document({"_id": "doc-b", "content": "two"})}))
+    later = time.time() + 5
+    os.utime(path, (later, later))  # another process wrote the file
+
+    assert (await mongo.MongoDocumentService.get_document("doc-b"))["content"] == "two"
+    assert await mongo.MongoDocumentService.get_document("doc-a") is None

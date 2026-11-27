@@ -230,7 +230,10 @@ async def test_account_lockout_after_repeated_failures(client):
 
 
 @pytest.mark.asyncio
-async def test_outbox_keeps_events_queued_while_chain_is_unavailable(client):
+async def test_outbox_keeps_events_queued_while_chain_is_unavailable(client, monkeypatch):
+    # Simulate the outage so the test holds even when a local Hardhat node is running.
+    from src.services import blockchain
+    monkeypatch.setattr(blockchain, "get_contract", lambda: None)
     admin = (await client.post("/api/v1/auth/demo-switch?role=admin")).json()
     headers = {"Authorization": f"Bearer {admin['access_token']}"}
     doc = await client.post("/api/v1/documents", json={
@@ -248,7 +251,7 @@ async def test_outbox_keeps_events_queued_while_chain_is_unavailable(client):
             select(OutboxEvent).where(OutboxEvent.aggregate_id == document_id,
                                       OutboxEvent.event_type == "BLOCKCHAIN_ANCHOR_RECORD")
         )).scalar_one()
-        # No chain in the test environment: the event must stay queued with a scheduled retry,
+        # Chain unavailable: the event must stay queued with a scheduled retry,
         # not be marked COMPLETED (the previous behavior silently discarded the evidence).
         assert event.status == "PENDING"
         assert event.attempt_count == 1

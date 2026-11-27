@@ -61,6 +61,7 @@ class PrescriptionOut(BaseModel):
     frequency_text: str
     start_date: date
     end_date: Optional[date] = None
+    allergy_override_reason: Optional[str] = None
 
 class LabResultOut(BaseModel):
     id: str

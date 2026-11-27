@@ -98,15 +98,15 @@ export default function GraphPage() {
   const getNodeColor = (label: string) => {
     switch (label) {
       case "Disease":
-        return "bg-rose-500/20 text-rose-300 border-rose-500/40";
+        return "bg-rose-100 text-rose-700 border-rose-300";
       case "Medication":
-        return "bg-sky-500/20 text-sky-300 border-sky-500/40";
+        return "bg-sky-100 text-sky-700 border-sky-300";
       case "SideEffect":
-        return "bg-amber-500/20 text-amber-300 border-amber-500/40";
+        return "bg-amber-100 text-amber-700 border-amber-300";
       case "Patient":
-        return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+        return "bg-emerald-100 text-emerald-700 border-emerald-300";
       default:
-        return "bg-slate-800 text-slate-300 border-slate-700";
+        return "bg-slate-100 text-slate-700 border-slate-300";
     }
   };
 
@@ -114,21 +114,21 @@ export default function GraphPage() {
     <div className="space-y-8 animate-in fade-in duration-200">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
-            <Share2 className="w-6 h-6 text-sky-400" />
-            <span>Disease–Drug Knowledge Graph Intelligence</span>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center space-x-2.5">
+            <Share2 className="w-6 h-6 text-brand-600" />
+            <span>Disease–drug graph</span>
           </h1>
-          <p className="text-xs text-slate-400">
-            Derived graph projection (Neo4j) tracking comorbidities and reported adverse symptom associations
+          <p className="mt-1 text-sm text-slate-600">
+            Co-occurring conditions and reported medication side effects across the patient population.
           </p>
         </div>
 
         <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+          <div className="flex items-center space-x-1 p-1 rounded-xl bg-slate-50 border border-slate-200 text-xs">
             <button
               onClick={() => setFilterMode("all")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                filterMode === "all" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" : "text-slate-400"
+                filterMode === "all" ? "bg-brand-100 text-brand-700 border border-brand-300" : "text-slate-600"
               }`}
             >
               Full Graph
@@ -136,7 +136,7 @@ export default function GraphPage() {
             <button
               onClick={() => setFilterMode("cooccurrence")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                filterMode === "cooccurrence" ? "bg-rose-500/20 text-rose-300 border border-rose-500/30" : "text-slate-400"
+                filterMode === "cooccurrence" ? "bg-rose-100 text-rose-700 border border-rose-300" : "text-slate-600"
               }`}
             >
               Comorbidity Links
@@ -144,7 +144,7 @@ export default function GraphPage() {
             <button
               onClick={() => setFilterMode("side_effects")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                filterMode === "side_effects" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-slate-400"
+                filterMode === "side_effects" ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-slate-600"
               }`}
             >
               Drug–Side Effect
@@ -156,7 +156,7 @@ export default function GraphPage() {
               aria-label="Research project consent scope"
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white"
+              className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-900"
             >
               {researchProjects.length === 0 && <option value="">No research projects</option>}
               {researchProjects.map((project) => (
@@ -169,9 +169,9 @@ export default function GraphPage() {
             <button
               onClick={handleRebuildGraph}
               disabled={rebuilding}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 active:scale-95 transition-all"
+              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300 active:scale-95 transition-all"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${rebuilding ? "animate-spin text-cyan-400" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${rebuilding ? "animate-spin text-brand-700" : ""}`} />
               <span>{rebuilding ? "Rebuilding..." : "Rebuild Graph"}</span>
             </button>
           )}
@@ -179,19 +179,19 @@ export default function GraphPage() {
       </div>
 
       {loadError && (
-        <div role="alert" className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-800/50 text-xs text-rose-200">
+        <div role="alert" className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
           {loadError}
         </div>
       )}
       {userRole === "researcher" && !projectId && !loadError && (
-        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
+        <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
           Create or select a research project to load graph data covered by active patient consent.
         </div>
       )}
 
       {/* Required Association Caveat Banner */}
-      <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-800/40 flex items-start space-x-3 text-xs text-amber-200">
-        <Info className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+      <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start space-x-3 text-xs text-amber-800">
+        <Info className="w-4 h-4 shrink-0 text-amber-700 mt-0.5" />
         <div>
           <span className="font-bold">Association Disclaimer:</span> {graphData.disclaimer || "Graph edges represent synthetic observed co-occurrences, not proven pharmacological causation."}
         </div>
@@ -199,19 +199,19 @@ export default function GraphPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Nodes and Edges Interactive Grid */}
-        <div className="lg:col-span-8 glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-            <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-              <Network className="w-4 h-4 text-cyan-400" />
+        <div className="lg:col-span-8 glass-panel p-6 rounded-xl border border-slate-200 space-y-6">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+              <Network className="w-4 h-4 text-brand-700" />
               <span>Projected Knowledge Nodes ({graphData.nodes?.length || 0})</span>
             </h2>
-            <span className="text-[11px] text-slate-400 font-mono">
+            <span className="text-[11px] text-slate-600 font-mono">
               {graphData.edges?.length || 0} Relationships Connected
             </span>
           </div>
 
           {loading ? (
-            <div className="text-xs text-slate-400 text-center py-20">Loading graph topology...</div>
+            <div className="text-xs text-slate-600 text-center py-20">Loading graph topology...</div>
           ) : (
             <div className="space-y-6">
               {/* Nodes Cloud / Selector */}
@@ -224,7 +224,7 @@ export default function GraphPage() {
                       key={node.id}
                       onClick={() => setSelectedNode(node)}
                       className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${labelColor} ${
-                        isSelected ? "ring-2 ring-cyan-400 scale-105 shadow-md shadow-cyan-500/20" : "hover:brightness-125"
+                        isSelected ? "ring-2 ring-brand-400 scale-105 shadow-md " : "hover:brightness-125"
                       }`}
                     >
                       <span className="opacity-70 text-[10px] mr-1.5 uppercase">{node.label}:</span>
@@ -236,23 +236,23 @@ export default function GraphPage() {
 
               {/* Connected Relationships Stream */}
               <div className="space-y-2">
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <div className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
                   Top Graph Traversal Edges
                 </div>
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {graphData.edges?.slice(0, 30).map((edge: any) => (
                     <div
                       key={edge.id}
-                      className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 text-xs flex items-center justify-between"
+                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between"
                     >
                       <div className="flex items-center space-x-2 font-mono">
-                        <span className="text-slate-300 font-semibold">{edge.source}</span>
-                        <span className="text-cyan-400 text-[11px] px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40">
+                        <span className="text-slate-700 font-semibold">{edge.source}</span>
+                        <span className="text-brand-700 text-[11px] px-2 py-0.5 rounded bg-brand-50 border border-brand-200">
                           -[:{edge.type}]-&gt;
                         </span>
-                        <span className="text-slate-300 font-semibold">{edge.target}</span>
+                        <span className="text-slate-700 font-semibold">{edge.target}</span>
                       </div>
-                      <div className="text-[11px] text-slate-400 font-mono">
+                      <div className="text-[11px] text-slate-600 font-mono">
                         {edge.properties ? JSON.stringify(edge.properties).replace(/["{}]/g, "") : ""}
                       </div>
                     </div>
@@ -264,47 +264,47 @@ export default function GraphPage() {
         </div>
 
         {/* Right Column: Node Inspector */}
-        <div className="lg:col-span-4 glass-panel p-6 rounded-2xl border border-slate-800 space-y-5">
-          <div className="border-b border-slate-800/80 pb-3">
-            <h2 className="text-sm font-bold text-white flex items-center space-x-2">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
+        <div className="lg:col-span-4 glass-panel p-6 rounded-xl border border-slate-200 space-y-5">
+          <div className="border-b border-slate-200 pb-3">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-brand-700" />
               <span>Node Inspector & Provenance</span>
             </h2>
           </div>
 
           {!selectedNode ? (
-            <div className="text-xs text-slate-400 text-center py-12">
+            <div className="text-xs text-slate-600 text-center py-12">
               Select any graph node on the left to inspect its properties and relational source.
             </div>
           ) : (
             <div className="space-y-4 animate-in fade-in duration-200 text-xs">
-              <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
-                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Node Label</div>
-                <div className="text-base font-bold text-white flex items-center space-x-2">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">Node Label</div>
+                <div className="text-base font-bold text-slate-900 flex items-center space-x-2">
                   <span className={`px-2 py-0.5 rounded text-xs border ${getNodeColor(selectedNode.label)}`}>
                     {selectedNode.label}
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-400 font-mono break-all pt-1">
+                <div className="text-[11px] text-slate-600 font-mono break-all pt-1">
                   Graph ID: {selectedNode.id}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
                   Projected Properties
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 font-mono text-[11px]">
+                <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-1.5 font-mono text-[11px]">
                   {Object.entries(selectedNode.properties || {}).map(([key, val]) => (
                     <div key={key} className="flex justify-between">
-                      <span className="text-slate-400">{key}:</span>
-                      <span className="text-cyan-300 font-semibold">{String(val)}</span>
+                      <span className="text-slate-600">{key}:</span>
+                      <span className="text-brand-700 font-semibold">{String(val)}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
                 <strong>Provenance Guarantee:</strong> This graph node is dynamically projected from the authoritative PostgreSQL database. No medical data originates in Neo4j.
               </div>
             </div>
