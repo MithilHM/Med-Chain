@@ -160,7 +160,7 @@ export default function SignupPage() {
             <label className="block space-y-1.5">
               <span className="text-xs font-medium text-slate-700">New password</span>
               <input type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
-              <span className="text-[11px] text-slate-500">At least 12 characters, with letters and numbers.</span>
+              <span className="text-xs text-slate-500">At least 12 characters, with letters and numbers.</span>
             </label>
             <label className="block space-y-1.5">
               <span className="text-xs font-medium text-slate-700">Confirm password</span>
@@ -170,7 +170,7 @@ export default function SignupPage() {
               className="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-700 hover:bg-brand-600 disabled:opacity-60 px-4 py-2.5 text-sm font-semibold text-white">
               <ShieldCheck className="w-4 h-4" /> {busy ? "Saving…" : preview.purpose === "PASSWORD_RESET" ? "Set new password" : "Create account"}
             </button>
-            <p className="text-[11px] text-slate-500 text-center">Code expires {new Date(preview.expires_at).toLocaleString()}.</p>
+            <p className="text-xs text-slate-500 text-center">Code expires {new Date(preview.expires_at).toLocaleString()}.</p>
           </form>
         )}
 

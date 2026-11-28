@@ -34,6 +34,7 @@ export default function Navbar() {
   const [health, setHealth] = useState<"checking" | "healthy" | "degraded" | "offline">("checking");
   const [menuOpen, setMenuOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isPublicPage = pathname === "/login" || pathname === "/signup";
 
@@ -60,12 +61,27 @@ export default function Navbar() {
   }, [isPublicPage]);
 
   useEffect(() => {
+    const sync = (event: Event) => setNavOpen(Boolean((event as CustomEvent<boolean>).detail));
+    window.addEventListener("medchain-sidebar-state", sync);
+    return () => window.removeEventListener("medchain-sidebar-state", sync);
+  }, []);
+
+  useEffect(() => {
     if (!menuOpen) return;
     const close = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
     };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [menuOpen]);
 
   const switchRole = async (roleId: string) => {
@@ -98,8 +114,11 @@ export default function Navbar() {
         <div className="flex items-center gap-3">
           {!isPublicPage && (
             <button
+              id="medchain-nav-toggle"
               type="button"
-              aria-label="Toggle navigation"
+              aria-label="Open navigation"
+              aria-controls="medchain-sidebar"
+              aria-expanded={navOpen}
               onClick={() => window.dispatchEvent(new Event("medchain-toggle-sidebar"))}
               className="md:hidden p-2 -ml-2 rounded-md text-slate-600 hover:bg-slate-100"
             >
@@ -111,17 +130,19 @@ export default function Navbar() {
               <HeartPulse className="w-5 h-5 text-white" />
             </span>
             <span className="leading-tight">
-              <span className="block text-[17px] font-bold tracking-tight text-slate-900">
+              <span className="block whitespace-nowrap text-base sm:text-[17px] font-bold tracking-tight text-slate-900">
                 MedChain <span className="text-brand-600">Health</span>
               </span>
-              <span className="hidden sm:block text-[11px] text-slate-500">Clinical Records Portal</span>
+              <span className="hidden sm:block text-xs text-slate-500">Clinical Records Portal</span>
             </span>
           </Link>
+          {/* The data limitation stays visible on phones too, in a shorter form. */}
           <span
-            className="hidden md:inline-flex ml-2 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-medium text-amber-800"
+            className="inline-flex shrink-0 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-medium text-amber-800 md:ml-2"
             title="Not yet approved for real patient data. Use synthetic records until go-live sign-off."
           >
-            Pilot · synthetic data only
+            <span className="md:hidden" aria-hidden="true">Pilot</span>
+            <span className="sr-only md:not-sr-only">Pilot · synthetic data only</span>
           </span>
         </div>
 
@@ -146,7 +167,9 @@ export default function Navbar() {
                   onClick={() => setMenuOpen(!menuOpen)}
                   disabled={switching}
                   aria-expanded={menuOpen}
-                  className="flex items-center gap-2.5 pl-1 pr-2 py-1 rounded-full hover:bg-slate-100 transition-colors"
+                  aria-haspopup="true"
+                  aria-label={`Account menu for ${user.email}`}
+                  className="flex items-center gap-2.5 pl-1 pr-2 py-1 rounded-full hover:bg-slate-100 active:bg-slate-200 transition-colors"
                 >
                   <span className="w-8 h-8 rounded-full bg-brand-100 text-brand-800 text-xs font-semibold flex items-center justify-center">
                     {initials(user.email)}
@@ -157,11 +180,11 @@ export default function Navbar() {
                       {ROLE_LABELS[user.role] || user.role}{user.demo_mode ? " · demo" : ""}
                     </span>
                   </span>
-                  {switching ? <RefreshCw className="w-4 h-4 text-slate-400 animate-spin" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  {switching ? <RefreshCw className="w-4 h-4 text-slate-400 animate-spin" /> : <ChevronDown className="hidden sm:block w-4 h-4 text-slate-400" />}
                 </button>
 
                 {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg border border-slate-200 shadow-lg py-1.5 z-50">
+                  <div className="motion-pop-in absolute right-0 mt-2 w-64 bg-white rounded-lg border border-slate-200 shadow-lg py-1.5 z-50">
                     <div className="px-4 py-2 border-b border-slate-100">
                       <div className="text-sm font-medium text-slate-900 truncate">{user.email}</div>
                       <div className="text-xs text-slate-500">{ROLE_LABELS[user.role] || user.role}</div>

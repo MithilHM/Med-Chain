@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { ApiClient } from "@/lib/api";
+import { DialogShell } from "@/components/Modal";
 import {
   FileText,
   Plus,
@@ -321,14 +322,13 @@ export default function DocumentsPage() {
 
       {/* Modal for Creating New Document */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg glass-panel p-6 rounded-xl border border-slate-300 space-y-4 animate-in zoom-in-95">
+        <DialogShell onClose={() => setShowCreateModal(false)} label="Author clinical note" className="max-w-lg border-slate-300">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
                 <FileText className="w-4 h-4 text-emerald-700" />
                 <span>Author Clinical Note</span>
               </h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-600 hover:text-slate-900">
+              <button type="button" onClick={() => setShowCreateModal(false)} aria-label="Close" className="text-slate-600 hover:text-slate-900">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -404,20 +404,18 @@ export default function DocumentsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DialogShell>
       )}
 
       {/* Modal for Signing Clinical Addendum / Amendment */}
       {showAmendModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg glass-panel p-6 rounded-xl border border-slate-300 space-y-4 animate-in zoom-in-95">
+        <DialogShell onClose={() => setShowAmendModal(false)} label="Sign clinical addendum or amendment" className="max-w-lg border-slate-300">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
                 <Edit3 className="w-4 h-4 text-brand-700" />
                 <span>Sign Clinical Addendum / Amendment</span>
               </h2>
-              <button onClick={() => setShowAmendModal(false)} className="text-slate-600 hover:text-slate-900">
+              <button type="button" onClick={() => setShowAmendModal(false)} aria-label="Close" className="text-slate-600 hover:text-slate-900">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -489,8 +487,7 @@ export default function DocumentsPage() {
                 </div>
               </form>
             )}
-          </div>
-        </div>
+        </DialogShell>
       )}
     </div>
   );

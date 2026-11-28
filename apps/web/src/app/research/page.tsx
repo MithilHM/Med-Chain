@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { ApiClient } from "@/lib/api";
+import { DialogShell } from "@/components/Modal";
 import {
   FlaskConical,
   Play,
@@ -331,8 +332,7 @@ export default function ResearchPage() {
 
       {/* Modal: New Project */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md glass-panel p-6 rounded-xl border border-slate-300 space-y-4 animate-in zoom-in-95">
+        <DialogShell onClose={() => setShowCreateModal(false)} label="Register research initiative" className="max-w-md border-slate-300">
             <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
               <Plus className="w-4 h-4 text-purple-700" />
               <span>Register Research Initiative</span>
@@ -380,14 +380,12 @@ export default function ResearchPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DialogShell>
       )}
 
       {/* Modal: Request Patient Consent */}
       {showReqModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md glass-panel p-6 rounded-xl border border-slate-300 space-y-4 animate-in zoom-in-95">
+        <DialogShell onClose={() => setShowReqModal(false)} label="Submit scoped consent request" className="max-w-md border-slate-300">
             <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
               <FlaskConical className="w-4 h-4 text-purple-700" />
               <span>Submit Scoped Consent Request</span>
@@ -454,8 +452,7 @@ export default function ResearchPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DialogShell>
       )}
     </div>
   );

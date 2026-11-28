@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -73,6 +73,8 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [role, setRole] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
     const updateRole = () => {
@@ -95,6 +97,22 @@ export default function Sidebar() {
 
   useEffect(() => setOpen(false), [pathname]);
 
+  // Mobile drawer: tell the menu button its state, close on Escape, and move focus in and back out.
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("medchain-sidebar-state", { detail: open }));
+    if (open) {
+      wasOpen.current = true;
+      closeRef.current?.focus();
+      const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }
+    if (wasOpen.current) {
+      wasOpen.current = false;
+      document.getElementById("medchain-nav-toggle")?.focus();
+    }
+  }, [open]);
+
   const sections = SECTIONS
     .map((section) => ({ ...section, items: section.items.filter((item) => role && item.roles.includes(role)) }))
     .filter((section) => section.items.length > 0);
@@ -103,14 +121,18 @@ export default function Sidebar() {
 
   return (
     <>
-      {open && <div className="fixed inset-0 z-50 bg-slate-900/40 md:hidden" onClick={() => setOpen(false)} />}
+      {open && <div aria-hidden="true" className="motion-fade-in fixed inset-0 z-50 bg-slate-900/40 md:hidden" onClick={() => setOpen(false)} />}
       <aside
+        id="medchain-sidebar"
         className={`fixed inset-y-0 left-0 z-50 md:sticky md:top-16 md:z-auto md:h-[calc(100vh-4rem)] w-64 shrink-0 bg-white border-r border-slate-200 flex flex-col
-          transform transition-transform md:transform-none ${open ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
+          duration-300 ease-drawer md:transform-none md:visible
+          ${open
+            ? "transition-transform translate-x-0 visible shadow-xl md:shadow-none"
+            : "transition-[transform,visibility] -translate-x-full invisible md:translate-x-0"}`}
       >
         <div className="md:hidden h-16 px-4 flex items-center justify-between border-b border-slate-200">
           <span className="text-sm font-semibold text-slate-900">Menu</span>
-          <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="p-2 rounded-md text-slate-500 hover:bg-slate-100">
+          <button ref={closeRef} type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="p-2 rounded-md text-slate-500 hover:bg-slate-100">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -128,11 +150,10 @@ export default function Sidebar() {
                       <Link
                         href={item.href}
                         aria-current={active ? "page" : undefined}
-                        className={`relative flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                        className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                           active ? "bg-brand-50 text-brand-800 font-semibold" : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
                         }`}
                       >
-                        {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-brand-600" />}
                         <Icon className={`w-[18px] h-[18px] ${active ? "text-brand-600" : "text-slate-400"}`} />
                         {item.label}
                       </Link>

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { ApiClient } from "@/lib/api";
+import { CONSENT_SCOPE_LABELS, scopeLabel } from "@/lib/consentScopes";
 import {
   KeyRound,
   ShieldCheck,
@@ -99,14 +100,16 @@ export default function ConsentPage() {
 
       {/* Pending Access Requests Section */}
       <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <div className="flex items-center space-x-2">
-            <Clock className="w-4 h-4 text-amber-700" />
-            <h2 className="text-sm font-bold text-slate-900">Pending Research Access Requests</h2>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Clock className="w-4 h-4 shrink-0 text-amber-700" aria-hidden="true" />
+            <h2 className="text-sm font-bold text-slate-900">Research access requests</h2>
           </div>
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            {pendingRequests.length} Action Needed
-          </span>
+          {pendingRequests.length > 0 && (
+            <span className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+              {pendingRequests.length} to decide
+            </span>
+          )}
         </div>
 
         {loading ? (
@@ -120,19 +123,18 @@ export default function ConsentPage() {
             {pendingRequests.map((req) => (
               <div key={req.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                 <div>
-                  <div className="text-xs font-bold text-slate-900">{req.project_title || "Research Initiative"}</div>
-                  <div className="text-[11px] text-slate-600 mt-0.5">{req.purpose}</div>
+                  <h3 className="text-sm font-semibold text-slate-900">{req.project_title || "Research Initiative"}</h3>
+                  <p className="text-xs text-slate-600 mt-0.5">{req.purpose}</p>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="text-[10px] uppercase font-semibold text-slate-600 tracking-wider">
-                    Choose scopes to grant
-                  </div>
-                  <div className="grid grid-cols-1 gap-1.5">
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-semibold text-slate-700 mb-1.5">What you are sharing</legend>
+                  <div className="grid grid-cols-1 gap-1">
                     {req.requested_scopes?.map((sc: string) => {
                       const selected = selectedScopes[req.id] ?? req.requested_scopes;
+                      const info = CONSENT_SCOPE_LABELS[sc];
                       return (
-                        <label key={sc} className="flex items-center gap-2 text-[11px] text-slate-700">
+                        <label key={sc} className="flex items-start gap-2.5 rounded-lg px-2 py-2 -mx-2 cursor-pointer hover:bg-white">
                           <input
                             type="checkbox"
                             checked={selected.includes(sc)}
@@ -140,21 +142,27 @@ export default function ConsentPage() {
                               const next = current[req.id] ?? req.requested_scopes;
                               return { ...current, [req.id]: event.target.checked ? [...next, sc] : next.filter((scope: string) => scope !== sc) };
                             })}
-                            className="accent-purple-600"
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
                           />
-                          <span className="font-mono">{sc}</span>
+                          <span className="min-w-0">
+                            <span className="block text-sm text-slate-900">{info?.label ?? scopeLabel(sc)}</span>
+                            <span className="block text-xs text-slate-500">
+                              {info?.detail && <>{info.detail} · </>}
+                              <span className="font-mono text-[11px]">{sc}</span>
+                            </span>
+                          </span>
                         </label>
                       );
                     })}
                   </div>
-                </div>
+                </fieldset>
 
-                <label className="flex items-center justify-between text-[11px] text-slate-600">
-                  Consent duration
+                <label className="flex items-center justify-between gap-3 text-xs text-slate-700">
+                  For how long
                   <select
                     value={validDays[req.id] ?? 30}
                     onChange={(event) => setValidDays((current) => ({ ...current, [req.id]: Number(event.target.value) }))}
-                    className="rounded bg-slate-100 border border-slate-300 px-2 py-1 text-slate-800"
+                    className="rounded-lg bg-white border border-slate-300 px-2 py-1.5 text-sm text-slate-800"
                   >
                     {[30, 90, 180, 365].map((days) => <option key={days} value={days}>{days} days</option>)}
                   </select>
@@ -186,12 +194,12 @@ export default function ConsentPage() {
 
       {/* Active Granted Consents Section */}
       <div className="glass-panel p-6 rounded-xl border border-slate-200 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <div className="flex items-center space-x-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-700" />
-            <h2 className="text-sm font-bold text-slate-900">Active Scoped Consents ({activeConsents.length})</h2>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-slate-200 pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-700" aria-hidden="true" />
+            <h2 className="text-sm font-bold text-slate-900">Active consents ({activeConsents.length})</h2>
           </div>
-          <span className="text-xs text-slate-600">Checked for each new query</span>
+          <span className="text-xs text-slate-600">Checked again before every research query</span>
         </div>
 
         {activeConsents.length === 0 ? (
@@ -209,34 +217,38 @@ export default function ConsentPage() {
                   className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4"
                 >
                   <div className="space-y-1.5 max-w-xl">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-slate-900">{c.project_title || "Research Study"}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        {isExpired ? "EXPIRED" : "ACTIVE"}
+                    <div className="flex items-start justify-between gap-3 md:justify-start">
+                      <h3 className="text-sm font-semibold text-slate-900">{c.project_title || "Research Study"}</h3>
+                      <span
+                        className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${
+                          isExpired ? "bg-slate-100 text-slate-700 border-slate-300" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        }`}
+                      >
+                        {isExpired ? "Expired" : "Active"}
                       </span>
                     </div>
 
-                    <div className="text-[11px] text-slate-600">{c.purpose}</div>
+                    <p className="text-xs text-slate-600">{c.purpose}</p>
 
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-slate-600 uppercase font-semibold">Scope:</span>
+                      <span className="text-xs text-slate-600">Sharing:</span>
                       {scopes.map((sc: string, idx: number) => (
                         <span
                           key={idx}
-                          className="px-2 py-0.5 rounded bg-slate-100 text-brand-700 border border-slate-300 text-[10px] font-mono"
+                          title={sc}
+                          className="px-2 py-0.5 rounded bg-white text-slate-800 border border-slate-300 text-xs"
                         >
-                          {sc}
+                          {scopeLabel(sc)}
                         </span>
                       ))}
                     </div>
 
-                    <div className="text-[11px] text-slate-600 flex items-center space-x-3 pt-1">
-                      <span className="flex items-center space-x-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>Valid Until: {new Date(c.valid_until).toLocaleDateString()}</span>
+                    <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" aria-hidden="true" />
+                        <span>{isExpired ? "Expired" : "Valid until"} {new Date(c.valid_until).toLocaleDateString(undefined, { dateStyle: "medium" })}</span>
                       </span>
-                      <span>•</span>
-                      <span className="font-mono text-[10px] text-purple-700">
+                      <span className="font-mono text-[11px] text-purple-700">
                         Grant Tx: {c.chain_tx_hash ? c.chain_tx_hash.slice(0, 16) + "..." : "Not anchored"}
                       </span>
                     </div>

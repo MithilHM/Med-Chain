@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiClient } from "@/lib/api";
+import Modal from "@/components/Modal";
 import {
   AlertTriangle, ArrowDownToLine, CheckCircle2, Clock, Copy, Flame, FlaskConical, KeyRound, Pencil, Pill,
   PlusCircle, Search, ShieldAlert, Stethoscope, UserPlus, Users, X, UserCog, DoorOpen,
@@ -20,22 +21,6 @@ function age(dob: string): number {
   const beforeBirthday = now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate());
   if (beforeBirthday) years -= 1;
   return years;
-}
-
-function Modal({ title, icon: Icon, onClose, children, tone = "border-slate-200" }: {
-  title: string; icon: React.ElementType; onClose: () => void; children: React.ReactNode; tone?: string;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className={`glass-panel w-full max-w-lg rounded-xl border ${tone} shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Icon className="w-5 h-5 text-brand-700" />{title}</h2>
-          <button onClick={onClose} className="text-slate-600 hover:text-slate-900"><X className="w-5 h-5" /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
 }
 
 function OneTimeCode({ code, expires, onClose }: { code: string; expires: string; onClose: () => void }) {
@@ -58,8 +43,21 @@ export default function PatientsPage() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<any>(null);
   const [search, setSearch] = useState("");
+  const chartRef = useRef<HTMLDivElement>(null);
+  const scrollToChart = useRef(false);
+  // In the single-column layout the chart sits below the list; bring it into view once it has loaded.
+  const selectPatient = (id: string) => {
+    scrollToChart.current = window.matchMedia("(max-width: 1023px)").matches;
+    setSelectedPatientId(id);
+  };
   const [loading, setLoading] = useState(true);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  useEffect(() => {
+    if (timelineLoading || !scrollToChart.current) return;
+    scrollToChart.current = false;
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    chartRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+  }, [timelineLoading]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -358,11 +356,11 @@ export default function PatientsPage() {
           {(
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-3 text-slate-600" />
-              <input type="text" placeholder="Search MRN or family name…" value={search} onChange={(e) => setSearch(e.target.value)}
+              <input type="search" aria-label="Search patients by MRN or family name" placeholder="Search MRN or family name…" value={search} onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-brand-400" />
             </div>
           )}
-          <div className="space-y-2 max-h-[640px] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[45vh] lg:max-h-[640px] overflow-y-auto pr-1">
             {loading ? (
               <div className="text-xs text-slate-600 text-center py-8">Loading patients…</div>
             ) : patients.length === 0 ? (
@@ -370,7 +368,7 @@ export default function PatientsPage() {
                 {search ? "No matching records." : role === "doctor" ? "No patients are assigned to your care yet." : "No patients registered yet."}
               </div>
             ) : patients.map((p) => (
-              <button key={p.id} onClick={() => setSelectedPatientId(p.id)}
+              <button key={p.id} type="button" aria-pressed={p.id === selectedPatientId} onClick={() => selectPatient(p.id)}
                 className={`w-full p-3.5 rounded-xl border text-left transition-all ${p.id === selectedPatientId
                   ? "bg-brand-50 border-brand-300" : "bg-slate-50 border-slate-200 hover:border-slate-300"}`}>
                 <div className="text-xs font-semibold text-slate-900">{p.display_name || "Name not recorded"}</div>
@@ -386,7 +384,7 @@ export default function PatientsPage() {
         </div>}
 
         {/* Chart */}
-        <div className={`${role === "patient" ? "lg:col-span-12" : "lg:col-span-8"} glass-panel p-6 rounded-xl border border-slate-200 space-y-6`}>
+        <div ref={chartRef} className={`${role === "patient" ? "lg:col-span-12" : "lg:col-span-8"} glass-panel p-4 sm:p-6 rounded-xl border border-slate-200 space-y-6 scroll-mt-20`}>
           {timelineLoading ? (
             <div className="text-xs text-slate-600 text-center py-16">Loading chart…</div>
           ) : !timeline ? (
@@ -576,29 +574,29 @@ export default function PatientsPage() {
         <Modal title="Register patient" icon={UserPlus} onClose={close}>
           <form onSubmit={submitRegister} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div><span className={label}>Given name</span><input required value={form.given_name || ""} onChange={set("given_name")} className={input} /></div>
-              <div><span className={label}>Family name</span><input required value={form.family_name || ""} onChange={set("family_name")} className={input} /></div>
+              <label className="block"><span className={label}>Given name</span><input required value={form.given_name || ""} onChange={set("given_name")} className={input} /></label>
+              <label className="block"><span className={label}>Family name</span><input required value={form.family_name || ""} onChange={set("family_name")} className={input} /></label>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><span className={label}>Date of birth</span><input type="date" required value={form.date_of_birth || ""} onChange={set("date_of_birth")} className={input} /></div>
-              <div><span className={label}>Sex</span>
+              <label className="block"><span className={label}>Date of birth</span><input type="date" required value={form.date_of_birth || ""} onChange={set("date_of_birth")} className={input} /></label>
+              <label className="block"><span className={label}>Sex</span>
                 <select value={form.sex} onChange={set("sex")} className={input}>
                   <option value="F">Female</option><option value="M">Male</option><option value="O">Other</option>
-                </select></div>
+                </select></label>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><span className={label}>Registering hospital</span>
+              <label className="block"><span className={label}>Registering hospital</span>
                 <select required value={form.hospital_id || ""} onChange={set("hospital_id")} className={input}>
                   <option value="">Choose…</option>
                   {hospitals.map((h) => <option key={h.id} value={h.id}>{h.name} ({h.facility_code})</option>)}
-                </select></div>
-              <div><span className={label}>MRN</span><input required value={form.display_code || ""} onChange={set("display_code")} placeholder="as issued by the hospital" className={input} /></div>
+                </select></label>
+              <label className="block"><span className={label}>MRN</span><input required value={form.display_code || ""} onChange={set("display_code")} placeholder="as issued by the hospital" className={input} /></label>
             </div>
-            <div><span className={label}>Primary doctor (puts the patient on their list)</span>
+            <label className="block"><span className={label}>Primary doctor (puts the patient on their list)</span>
               <select value={form.primary_doctor_id || ""} onChange={set("primary_doctor_id")} className={input}>
                 <option value="">Assign later</option>
                 {doctors.map((d) => <option key={d.id} value={d.id}>{d.display_name} · {d.specialty} · {d.hospital_name}</option>)}
-              </select></div>
+              </select></label>
             <label className="flex items-center gap-2 text-xs text-slate-700">
               <input type="checkbox" checked={!!form.issue_portal_invitation} onChange={set("issue_portal_invitation")} />
               Issue a patient-portal activation code now
@@ -616,13 +614,13 @@ export default function PatientsPage() {
         <Modal title="Correct patient details" icon={Pencil} onClose={close}>
           <form onSubmit={submitEdit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div><span className={label}>Given name</span><input value={form.given_name || ""} onChange={set("given_name")} className={input} /></div>
-              <div><span className={label}>Family name</span><input value={form.family_name || ""} onChange={set("family_name")} className={input} /></div>
-              <div><span className={label}>Date of birth</span><input type="date" value={form.date_of_birth || ""} onChange={set("date_of_birth")} className={input} /></div>
-              <div><span className={label}>Sex</span>
+              <label className="block"><span className={label}>Given name</span><input value={form.given_name || ""} onChange={set("given_name")} className={input} /></label>
+              <label className="block"><span className={label}>Family name</span><input value={form.family_name || ""} onChange={set("family_name")} className={input} /></label>
+              <label className="block"><span className={label}>Date of birth</span><input type="date" value={form.date_of_birth || ""} onChange={set("date_of_birth")} className={input} /></label>
+              <label className="block"><span className={label}>Sex</span>
                 <select value={form.sex} onChange={set("sex")} className={input}>
                   <option value="F">Female</option><option value="M">Male</option><option value="O">Other</option>
-                </select></div>
+                </select></label>
             </div>
             <p className="text-[11px] text-slate-500">Corrections are audited. Demographics fed from the hospital ADT system may be overwritten by later updates.</p>
             {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
@@ -645,15 +643,15 @@ export default function PatientsPage() {
             ))}
           </ul>
           <form onSubmit={submitCareTeam} className="grid grid-cols-3 gap-2 items-end">
-            <div className="col-span-2"><span className={label}>Doctor</span>
+            <label className="col-span-2 block"><span className={label}>Doctor</span>
               <select required value={form.doctor_id || ""} onChange={set("doctor_id")} className={input}>
                 <option value="">Choose…</option>
                 {doctors.map((d) => <option key={d.id} value={d.id}>{d.display_name} · {d.specialty}</option>)}
-              </select></div>
-            <div><span className={label}>Role</span>
+              </select></label>
+            <label className="block"><span className={label}>Role</span>
               <select value={form.relationship_type} onChange={set("relationship_type")} className={input}>
                 {["ATTENDING", "CONSULTING", "PRIMARY_CARE", "REFERRING"].map((r) => <option key={r} value={r}>{r.toLowerCase().replace("_", " ")}</option>)}
-              </select></div>
+              </select></label>
             <button type="submit" disabled={busy} className={`${primaryButton} col-span-3`}>Add to care team</button>
           </form>
         </Modal>
@@ -665,8 +663,8 @@ export default function PatientsPage() {
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
               Use only in an emergency for a patient not on your care team. Access lasts a limited time, is logged, and is reviewed by compliance.
             </div>
-            <div><span className={label}>Patient MRN</span>
-              <input required value={form.mrn || ""} onChange={set("mrn")} placeholder="e.g. PT-100205" className={input} /></div>
+            <label className="block"><span className={label}>Patient MRN</span>
+              <input required value={form.mrn || ""} onChange={set("mrn")} placeholder="e.g. PT-100205" className={input} /></label>
             <textarea required rows={3} minLength={10} placeholder="Clinical justification (required)" value={form.justification || ""}
               onChange={set("justification")} className={input} />
             {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
@@ -680,19 +678,19 @@ export default function PatientsPage() {
       {modal === "encounter" && (
         <Modal title="New encounter" icon={Stethoscope} onClose={close}>
           <form onSubmit={submitEncounter} className="space-y-3">
-            <div><span className={label}>Encounter type</span>
+            <label className="block"><span className={label}>Encounter type</span>
               <select value={form.visit_type} onChange={set("visit_type")} className={input}>
                 {ENCOUNTER_TYPES.map((t) => <option key={t}>{t}</option>)}
-              </select></div>
+              </select></label>
             {isAdmin && (
-              <div><span className={label}>Attending doctor</span>
+              <label className="block"><span className={label}>Attending doctor</span>
                 <select required value={form.doctor_id || ""} onChange={set("doctor_id")} className={input}>
                   <option value="">Choose…</option>
                   {doctors.map((d) => <option key={d.id} value={d.id}>{d.display_name} · {d.hospital_name}</option>)}
-                </select></div>
+                </select></label>
             )}
-            <div><span className={label}>Reason / summary code (optional)</span>
-              <input value={form.summary_code || ""} onChange={set("summary_code")} placeholder="e.g. I10-FOLLOWUP" className={input} /></div>
+            <label className="block"><span className={label}>Reason / summary code (optional)</span>
+              <input value={form.summary_code || ""} onChange={set("summary_code")} placeholder="e.g. I10-FOLLOWUP" className={input} /></label>
             {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
               <button type="submit" disabled={busy} className={primaryButton}>Start encounter</button></div>
@@ -703,13 +701,13 @@ export default function PatientsPage() {
       {modal === "allergy" && (
         <Modal title="Record allergy" icon={AlertTriangle} onClose={close}>
           <form onSubmit={submitAllergy} className="space-y-3">
-            <div><span className={label}>Substance</span><input required value={form.substance || ""} onChange={set("substance")} placeholder="e.g. Penicillin" className={input} /></div>
+            <label className="block"><span className={label}>Substance</span><input required value={form.substance || ""} onChange={set("substance")} placeholder="e.g. Penicillin" className={input} /></label>
             <div className="grid grid-cols-2 gap-3">
-              <div><span className={label}>Reaction</span><input value={form.reaction || ""} onChange={set("reaction")} placeholder="e.g. Hives" className={input} /></div>
-              <div><span className={label}>Severity</span>
+              <label className="block"><span className={label}>Reaction</span><input value={form.reaction || ""} onChange={set("reaction")} placeholder="e.g. Hives" className={input} /></label>
+              <label className="block"><span className={label}>Severity</span>
                 <select value={form.severity} onChange={set("severity")} className={input}>
                   {["MILD", "MODERATE", "SEVERE", "UNKNOWN"].map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
-                </select></div>
+                </select></label>
             </div>
             {actionError && <p className="text-xs text-rose-700">{actionError}</p>}
             <div className="flex justify-end gap-2"><button type="button" onClick={close} className={ghostButton}>Cancel</button>
@@ -724,20 +722,20 @@ export default function PatientsPage() {
           <form onSubmit={submitEntry} className="space-y-3">
             {entry.kind === "diagnosis" && (
               <>
-                <div><span className={label}>Diagnosis (ICD-10)</span>
+                <label className="block"><span className={label}>Diagnosis (ICD-10)</span>
                   <select required value={form.disease_code || ""} onChange={set("disease_code")} className={input}>
                     <option value="">Choose…</option>
                     {formatDiagnoses.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-                  </select></div>
+                  </select></label>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><span className={label}>Severity</span>
+                  <label className="block"><span className={label}>Severity</span>
                     <select value={form.severity} onChange={set("severity")} className={input}>
                       {["Mild", "Moderate", "Severe", "Critical"].map((s) => <option key={s}>{s}</option>)}
-                    </select></div>
-                  <div><span className={label}>Status</span>
+                    </select></label>
+                  <label className="block"><span className={label}>Status</span>
                     <select value={form.status} onChange={set("status")} className={input}>
                       {["Active", "Resolved", "Remission", "Ruled out"].map((s) => <option key={s}>{s}</option>)}
-                    </select></div>
+                    </select></label>
                 </div>
               </>
             )}
@@ -748,31 +746,31 @@ export default function PatientsPage() {
                     Allergies on record: {timeline.allergies.map((a: any) => a.substance).join(", ")}
                   </p>
                 )}
-                <div><span className={label}>Medication</span>
+                <label className="block"><span className={label}>Medication</span>
                   <select required value={form.medication_code || ""} onChange={set("medication_code")} className={input}>
                     <option value="">Choose…</option>
                     {catalog.medications.map((m) => <option key={m.code} value={m.code}>{m.name} ({m.drug_class})</option>)}
-                  </select></div>
+                  </select></label>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><span className={label}>Dose</span><input required value={form.dose_text || ""} onChange={set("dose_text")} placeholder="500 mg" className={input} /></div>
-                  <div><span className={label}>Frequency</span><input required value={form.frequency_text || ""} onChange={set("frequency_text")} placeholder="twice daily" className={input} /></div>
+                  <label className="block"><span className={label}>Dose</span><input required value={form.dose_text || ""} onChange={set("dose_text")} placeholder="500 mg" className={input} /></label>
+                  <label className="block"><span className={label}>Frequency</span><input required value={form.frequency_text || ""} onChange={set("frequency_text")} placeholder="twice daily" className={input} /></label>
                 </div>
-                <div><span className={label}>End date (optional)</span><input type="date" value={form.end_date || ""} onChange={set("end_date")} className={input} /></div>
+                <label className="block"><span className={label}>End date (optional)</span><input type="date" value={form.end_date || ""} onChange={set("end_date")} className={input} /></label>
                 {form.allergy_conflict && (
-                  <div><span className={label}>Reason for prescribing despite the allergy (recorded and audited)</span>
+                  <label className="block"><span className={label}>Reason for prescribing despite the allergy (recorded and audited)</span>
                     <textarea required minLength={10} rows={2} value={form.allergy_override_reason || ""} onChange={set("allergy_override_reason")}
-                      placeholder="e.g. Reaction was mild rash; benefit outweighs risk, monitoring in place" className={input} /></div>
+                      placeholder="e.g. Reaction was mild rash; benefit outweighs risk, monitoring in place" className={input} /></label>
                 )}
               </>
             )}
             {entry.kind === "lab" && (
               <>
-                <div><span className={label}>Test</span>
+                <label className="block"><span className={label}>Test</span>
                   <select required value={form.lab_test_code || ""} onChange={set("lab_test_code")} className={input}>
                     <option value="">Choose…</option>
                     {catalog.labTests.map((t) => <option key={t.code} value={t.code}>{t.name} ({t.unit}; ref {t.reference_range_text})</option>)}
-                  </select></div>
-                <div><span className={label}>Result</span><input required type="number" step="any" value={form.result_value || ""} onChange={set("result_value")} className={input} /></div>
+                  </select></label>
+                <label className="block"><span className={label}>Result</span><input required type="number" step="any" value={form.result_value || ""} onChange={set("result_value")} className={input} /></label>
                 <p className="text-[11px] text-slate-500">Results outside the reference range are flagged abnormal automatically.</p>
               </>
             )}

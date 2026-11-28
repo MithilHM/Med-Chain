@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { ApiClient } from "@/lib/api";
+import { DialogShell } from "@/components/Modal";
 import {
   DollarSign,
   AlertTriangle,
@@ -137,7 +138,7 @@ export default function InsurancePage() {
       </div>
 
       {/* Aggregate Cost Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="p-5 rounded-xl glass-panel border border-slate-200 space-y-1">
           <span className="text-xs font-medium text-slate-600">Total Billed Claims</span>
           <div className="text-2xl font-bold text-slate-900">${expenditure?.total_claimed || "0.00"}</div>
@@ -385,8 +386,7 @@ export default function InsurancePage() {
 
       {/* Modal: Create Transactional Claim */}
       {showClaimModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md glass-panel p-6 rounded-xl border border-slate-300 space-y-4 animate-in zoom-in-95">
+        <DialogShell onClose={() => setShowClaimModal(false)} label="Transactional claim submission" className="max-w-md border-slate-300">
             <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
               <Receipt className="w-4 h-4 text-amber-700" />
               <span>Transactional Claim Submission</span>
@@ -479,8 +479,7 @@ export default function InsurancePage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </DialogShell>
       )}
     </div>
   );

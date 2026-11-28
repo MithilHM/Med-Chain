@@ -217,20 +217,22 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {/* Phones: one compact row per figure (icon, label, value) so the actions below stay in reach.
+          Wider screens: the familiar tile with the value as the largest element. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {visibleTiles.map((tile) => {
           const Icon = tile.icon;
           return (
             <Link key={tile.title} href={tile.href}
-              className="bg-white rounded-lg border border-slate-200 shadow-card p-5 hover:border-brand-300 hover:shadow-md transition">
-              <div className="flex items-start justify-between">
-                <span className="text-sm font-medium text-slate-600">{tile.title}</span>
-                <span className={`w-9 h-9 rounded-lg flex items-center justify-center ${tile.tone}`}>
-                  <Icon className="w-[18px] h-[18px]" />
-                </span>
-              </div>
-              <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">{tile.value}</div>
-              <div className="mt-1 text-xs text-slate-500">{tile.sub}</div>
+              className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 [grid-template-areas:'icon_title_value'_'icon_sub_value']
+                sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:[grid-template-areas:'title_icon'_'value_value'_'sub_sub']
+                bg-white rounded-lg border border-slate-200 shadow-card px-4 py-3 sm:p-5 hover:border-brand-300 hover:shadow-md active:bg-slate-50 transition">
+              <span className="[grid-area:title] text-sm font-medium text-slate-700 sm:text-slate-600">{tile.title}</span>
+              <span className={`[grid-area:icon] w-9 h-9 rounded-lg flex items-center justify-center ${tile.tone}`}>
+                <Icon className="w-[18px] h-[18px]" />
+              </span>
+              <span className="[grid-area:value] text-2xl sm:mt-2 sm:text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">{tile.value}</span>
+              <span className="[grid-area:sub] sm:mt-1 text-xs text-slate-500">{tile.sub}</span>
             </Link>
           );
         })}
@@ -239,7 +241,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           {role && ["doctor", "patient", "admin"].includes(role) ? (
-            <LiveClinicalFeed />
+            <LiveClinicalFeed audience={role === "patient" ? "patient" : "staff"} />
           ) : (
             <div className="bg-white rounded-lg border border-slate-200 shadow-card p-6">
               <h2 className="text-base font-semibold text-slate-900">How your access works</h2>

@@ -109,10 +109,10 @@ export default function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-1 min-h-0">
       {idleWarning && (
-        <div role="alert" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg">
+        <div role="alert" className="motion-rise-in fixed inset-x-4 bottom-4 z-[60] mx-auto flex max-w-lg flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg sm:flex-nowrap">
           <Clock className="w-4 h-4 shrink-0" />
-          <span>You will be signed out in under a minute because of inactivity.</span>
-          <button onClick={() => void refresh()} className="rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600">
+          <span className="min-w-0 flex-1">You will be signed out in under a minute because of inactivity.</span>
+          <button onClick={() => void refresh()} className="shrink-0 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600 active:scale-[0.97] transition-transform">
             Stay signed in
           </button>
         </div>

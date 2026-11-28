@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ApiClient } from "@/lib/api";
 import {
   Share2,
@@ -13,8 +13,18 @@ import {
   Sparkles,
 } from "lucide-react";
 
+function nodeName(node: any, fallback = "") {
+  if (!node) return fallback;
+  const props = node.properties || {};
+  return props.name || (props.pseudonym ? `Patient ${props.pseudonym.slice(0, 6)}` : node.id);
+}
+
 export default function GraphPage() {
   const [graphData, setGraphData] = useState<any>({ nodes: [], edges: [], disclaimer: "" });
+  const nodeById = useMemo(
+    () => new Map<string, any>((graphData.nodes || []).map((node: any) => [node.id, node])),
+    [graphData.nodes],
+  );
   const [filterMode, setFilterMode] = useState<"all" | "cooccurrence" | "side_effects">("all");
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
@@ -123,9 +133,11 @@ export default function GraphPage() {
           </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1 p-1 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <div role="group" aria-label="Graph view" className="flex items-center gap-1 p-1 rounded-xl bg-slate-50 border border-slate-200 text-xs whitespace-nowrap">
             <button
+              type="button"
+              aria-pressed={filterMode === "all"}
               onClick={() => setFilterMode("all")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
                 filterMode === "all" ? "bg-brand-100 text-brand-700 border border-brand-300" : "text-slate-600"
@@ -134,6 +146,8 @@ export default function GraphPage() {
               Full Graph
             </button>
             <button
+              type="button"
+              aria-pressed={filterMode === "cooccurrence"}
               onClick={() => setFilterMode("cooccurrence")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
                 filterMode === "cooccurrence" ? "bg-rose-100 text-rose-700 border border-rose-300" : "text-slate-600"
@@ -142,6 +156,8 @@ export default function GraphPage() {
               Comorbidity Links
             </button>
             <button
+              type="button"
+              aria-pressed={filterMode === "side_effects"}
               onClick={() => setFilterMode("side_effects")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
                 filterMode === "side_effects" ? "bg-amber-100 text-amber-700 border border-amber-300" : "text-slate-600"
@@ -156,7 +172,7 @@ export default function GraphPage() {
               aria-label="Research project consent scope"
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-900"
+              className="w-full sm:w-auto sm:max-w-xs min-w-0 truncate px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-xs text-slate-900"
             >
               {researchProjects.length === 0 && <option value="">No research projects</option>}
               {researchProjects.map((project) => (
@@ -222,13 +238,15 @@ export default function GraphPage() {
                   return (
                     <button
                       key={node.id}
+                      type="button"
+                      aria-pressed={isSelected}
                       onClick={() => setSelectedNode(node)}
                       className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${labelColor} ${
                         isSelected ? "ring-2 ring-brand-400 scale-105 shadow-md " : "hover:brightness-125"
                       }`}
                     >
                       <span className="opacity-70 text-[10px] mr-1.5 uppercase">{node.label}:</span>
-                      <span>{node.properties.name || (node.properties.pseudonym ? `Patient ${node.properties.pseudonym.slice(0, 6)}` : node.id)}</span>
+                      <span>{nodeName(node)}</span>
                     </button>
                   );
                 })}
@@ -243,16 +261,17 @@ export default function GraphPage() {
                   {graphData.edges?.slice(0, 30).map((edge: any) => (
                     <div
                       key={edge.id}
-                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between"
+                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5"
                     >
-                      <div className="flex items-center space-x-2 font-mono">
-                        <span className="text-slate-700 font-semibold">{edge.source}</span>
-                        <span className="text-brand-700 text-[11px] px-2 py-0.5 rounded bg-brand-50 border border-brand-200">
+                      {/* Endpoints by name; the raw graph IDs stay available on hover for evaluators. */}
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <span className="text-slate-800 font-semibold break-words" title={edge.source}>{nodeName(nodeById.get(edge.source), edge.source)}</span>
+                        <span className="font-mono text-brand-700 text-[11px] px-2 py-0.5 rounded bg-brand-50 border border-brand-200 whitespace-nowrap">
                           -[:{edge.type}]-&gt;
                         </span>
-                        <span className="text-slate-700 font-semibold">{edge.target}</span>
+                        <span className="text-slate-800 font-semibold break-words" title={edge.target}>{nodeName(nodeById.get(edge.target), edge.target)}</span>
                       </div>
-                      <div className="text-[11px] text-slate-600 font-mono">
+                      <div className="text-[11px] text-slate-600 font-mono break-all">
                         {edge.properties ? JSON.stringify(edge.properties).replace(/["{}]/g, "") : ""}
                       </div>
                     </div>

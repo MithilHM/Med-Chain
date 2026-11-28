@@ -97,7 +97,7 @@ export default function OperationsPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <Section title="Interface messages needing review" icon={Inbox}>
           {integration && (
-            <div className="flex gap-3 text-[11px] text-slate-600">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
               {Object.entries(integration.counts ?? {}).map(([k, v]) => <span key={k}>{k}: <b className="text-slate-800">{String(v)}</b></span>)}
               <span className="ml-auto">last message: {integration.last_message_received_at ? new Date(integration.last_message_received_at).toLocaleString() : "none"}</span>
             </div>

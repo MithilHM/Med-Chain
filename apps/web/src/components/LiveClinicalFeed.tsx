@@ -73,7 +73,7 @@ function describe(event: ClinicalEvent): { label: string; icon: React.ElementTyp
  * Events contain identifiers and flags only; opening a patient fetches details through the
  * normal access-checked API, which records an audit event.
  */
-export default function LiveClinicalFeed() {
+export default function LiveClinicalFeed({ audience = "staff" }: { audience?: "staff" | "patient" }) {
   const [events, setEvents] = useState<ClinicalEvent[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "reconnecting">("connecting");
   const sourceRef = useRef<EventSource | null>(null);
@@ -118,20 +118,23 @@ export default function LiveClinicalFeed() {
         </div>
         <div className="flex items-center space-x-2 text-[11px] text-slate-600">
           <span className={`w-2 h-2 rounded-full ${indicator}`} />
-          <span>{state}</span>
+          <span className="capitalize">{state}</span>
         </div>
       </div>
+      {/* Always mounted, so the first event to arrive is announced too. */}
+      <div aria-live="polite" aria-relevant="additions text">
       {events.length === 0 ? (
         <p className="text-sm text-slate-500">
-          Waiting for admissions, lab results, and alerts for patients in your care. Events arrive from hospital
-          HL7 feeds and MedChain activity as they happen.
+          {audience === "patient"
+            ? "New results and changes to your record will appear here as your hospital sends them."
+            : "Waiting for admissions, lab results, and alerts for patients in your care. Events arrive from hospital HL7 feeds and MedChain activity as they happen."}
         </p>
       ) : (
         <ul className="space-y-2 max-h-80 overflow-y-auto pr-1">
           {events.map((event) => {
             const { label, icon: Icon, tone } = describe(event);
             return (
-              <li key={`${event.id}-${event.occurred_at}`} className={`flex items-start space-x-3 p-3 rounded-md border ${tone}`}>
+              <li key={`${event.id}-${event.occurred_at}`} className={`motion-rise-in flex items-start space-x-3 p-3 rounded-md border ${tone}`}>
                 <Icon className="w-4 h-4 mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-semibold">{label}</div>
@@ -150,6 +153,7 @@ export default function LiveClinicalFeed() {
           })}
         </ul>
       )}
+      </div>
     </div>
   );
 }

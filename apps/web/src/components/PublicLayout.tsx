@@ -14,7 +14,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       <section className="hidden lg:flex flex-col justify-between bg-brand-700 text-white px-12 py-12">
         <div className="max-w-md space-y-8">
           <div>
-            <h1 className="text-3xl font-bold leading-tight text-white">Secure access to clinical records</h1>
+            <h2 className="text-3xl font-bold leading-tight tracking-tight text-white">Secure access to clinical records</h2>
             <p className="mt-3 text-brand-100 text-[15px] leading-relaxed">
               For patients of participating hospitals and the clinicians who care for them.
             </p>
